@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <title>Increment Counter Settings</title>
+    <meta charset="utf-8" />
+    <script src="https://sdpi-components.dev/releases/v3/sdpi-components.js"></script>
+</head>
+
+<body>
+    <!--
+        Learn more about property inspector components at https://sdpi-components.dev/docs/components
+    -->
+    <sdpi-item label="Prefix title">
+        <sdpi-textfield setting="prefixTitle" placeholder="Please use THIS title field, not the above!"></sdpi-textfield>
+    </sdpi-item>
+    <sdpi-item label="Increment By">
+        <sdpi-range setting="incrementBy" min="1" max="10" step="1" default="1" showlabels></sdpi-range>
+    </sdpi-item>
+    <sdpi-item label="Shared ID">
+        <sdpi-textfield setting="sharedId" placeholder="Enter shared ID"></sdpi-textfield>
+    </sdpi-item>
+    <sdpi-item label="Background color">
+        <sdpi-select setting="backgroundColor" placeholder="Please choose a color">
+            <option value="aquaBackground">Aqua</option>
+            <option value="aquaCBackground">Aqua (c)</option>
+            <option value="blackBackground">Black</option>
+            <option value="blueBackground">Blue</option>
+            <option value="blueCBackground">Blue (c)</option>
+            <option value="brownBackground">Brown</option>
+            <option value="brownCBackground">Brown (c)</option>
+            <option value="cyanBackground">Cyan</option>
+            <option value="cyanCBackground">Cyan (c)</option>
+            <option value="fuchsiaBackground">Fuchsia</option>
+            <option value="fuchsiaCBackground">Fuchsia (c)</option>
+            <option value="goldBackground">Gold</option>
+            <option value="goldCBackground">Gold (c)</option>
+            <option value="grayBackground">Gray</option>
+            <option value="grayCBackground">Gray (c)</option>
+            <option value="greenBackground">Green</option>
+            <option value="greenCBackground">Green (c)</option>
+            <option value="lavenderBackground">Lavender</option>
+            <option value="lavenderCBackground">Lavender (c)</option>
+            <option value="limeBackground">Lime</option>
+            <option value="limeCBackground">Lime (c)</option>
+            <option value="maroonBackground">Maroon</option>
+            <option value="maroonCBackground">Maroon (c)</option>
+            <option value="navyBackground">Navy</option>
+            <option value="navyCBackground">Navy (c)</option>
+            <option value="oliveBackground">Olive</option>
+            <option value="oliveCBackground">Olive (c)</option>
+            <option value="orangeBackground">Orange</option>
+            <option value="orangeCBackground">Orange (c)</option>
+            <option value="pinkBackground">Pink</option>
+            <option value="pinkCBackground">Pink (c)</option>
+            <option value="purpleBackground">Purple</option>
+            <option value="purpleCBackground">Purple (c)</option>
+            <option value="redBackground">Red</option>
+            <option value="redCBackground">Red (c)</option>
+            <option value="silverBackground">Silver</option>
+            <option value="silverCBackground">Silver (c)</option>
+            <option value="tealBackground">Teal</option>
+            <option value="tealCBackground">Teal  (c)</option>
+            <option value="turquoiseBackground">Turquoise</option>
+            <option value="turquoiseCBackground">Turquoise (c)</option>
+            <option value="warningBackground">Warning</option>
+            <option value="whiteBackground">White</option>
+            <option value="yellowBackground">Yellow</option>
+            <option value="yellowCBackground">Yellow (c)</option>
+        </sdpi-select>
+    </sdpi-item>
+    
+    <script>
+        let uuid = null;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            $SD.on('connected', (jsonObj) => {
+                uuid = jsonObj.context;
+            });
+
+            const selectElement = document.querySelector('sdpi-select[setting="backgroundColor"]');
+            
+            selectElement.addEventListener('change', (event) => {
+                if (!uuid) return;
+
+                const newColor = event.target.value;
+                const payload = {
+                    event: "setSettings",
+                    context: uuid,
+                    payload: {
+                        backgroundColor: newColor
+                    }
+                };
+                console.log("Sending payload to plugin:", payload); // Add logging here
+                $SD.api.send(payload);
+            });
+
+            $SD.api.getSettings();
+            $SD.on('didReceiveSettings', ({ payload }) => {
+                if (payload.settings.backgroundColor) {
+                    selectElement.value = payload.settings.backgroundColor;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

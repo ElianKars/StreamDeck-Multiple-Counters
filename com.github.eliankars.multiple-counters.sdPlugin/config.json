@@ -1,0 +1,4 @@
+{
+    "logLevel": "info",
+    "logLevel comment": "Change logLevel to 'trace' for detailed logging"
+}

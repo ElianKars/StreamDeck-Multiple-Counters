@@ -1,0 +1,66 @@
+{
+	"Name": "Multiple counters",
+	"Version": "1.0.0.0",
+	"Author": "Elian Kars",
+	"Actions": [
+		{
+			"Name": "Counter",
+			"UUID": "com.github.eliankars.multiple-counters.counter",
+			"Icon": "imgs/actions/counter/icon",
+			"Tooltip": "Displays a counter that increments by a specified value on each press.",
+			"PropertyInspectorPath": "ui/counter.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/background/blackBackground",	
+					"TitleAlignment": "middle",
+					"FontSize": 14
+				}
+			]
+		},
+		{
+			"Name": "Reset All Counters",
+			"UUID": "com.github.eliankars.multiple-counters.reset",
+			"Icon": "imgs/actions/reset/icon",
+			"Tooltip": "Resets all counters with the same shared ID to zero.",
+			"PropertyInspectorPath": "ui/reset.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/background/blackBackground",
+					"Title": "Reset",
+					"TitleAlignment": "middle",
+					"FontSize": 12
+				}
+			]
+		}
+	],
+	"Category": "Multiple Counters",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Manage multiple counters and assign reset button(s) to reset them together.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.4"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "10.15"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "com.github.eliankars.multiple-counters"
+}
