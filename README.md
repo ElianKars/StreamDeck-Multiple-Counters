@@ -12,10 +12,12 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 - Reset button ask's for confirmation
 - Choose from a list of basic background colors, each color also has an adjusted version '_(c)_' to provide better contrast with white text according to WCAG contrast requirements (minimum 4.5:1 ratio).
 
+
 ## 🚀Installation
 1. Download _Multiple Counters_ plugin in the Stream Deck Store or [here](https://github.com/ElianKars/multiple-counters_streamdeck/releases/latest).
 2. Double-click the downloaded file to install
 3. Stream Deck will automatically add the plugin
+
 
 ## 🔧 Usage
 ### Counter Action
@@ -28,6 +30,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 > [!IMPORTANT]  
 > Use the `Prefix Title` field, not the built-in `Title` field. You can use the Title field only for text formatting.
+
 
 ### Reset Action
 1. Drag the Counter action to your Stream Deck
@@ -43,12 +46,15 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 > [!IMPORTANT]  
 > Use the `Prefix Title` field, not the built-in `Title` field. You can use the Title field only for text formatting.
 
+
 ## 📝Changelog
 ### 1.0.0
 - Initial release
 
+
 ## 🐛Support
 Found a bug? Have a feature request? [Open an issue](../../issues)
+
 
 ## 🛠️ Development
 
@@ -61,5 +67,6 @@ Built with:
 [MIT License](LICENSE)
 
 
+##
 > [!CAUTION]
 > Beware: Cats are planning to take over the world! First, they steal our keyboards. Then, world domination.
