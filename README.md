@@ -59,3 +59,7 @@ Built with:
 
 ## 📄License
 [MIT License](LICENSE)
+
+
+> [!CAUTION]
+> Beware: Cats are planning to take over the world! First, they steal our keyboards. Then, world domination.

@@ -4,14 +4,7 @@ node_modules/
 # Stream Deck files
 *.sdPlugin/bin
 *.sdPlugin/logs
-com.github.eliankars.multiple-counters.sdPlugin/keep/Category.psd
-com.github.eliankars.multiple-counters.sdPlugin/keep/Counter action.psd
-com.github.eliankars.multiple-counters.sdPlugin/keep/Marketplace.png
-com.github.eliankars.multiple-counters.sdPlugin/keep/Preview1.jpg
-com.github.eliankars.multiple-counters.sdPlugin/keep/Reset action.psd
-com.github.eliankars.multiple-counters.sdPlugin/LICENSE
-com.github.eliankars.multiple-counters.sdPlugin/manifest.json
-com.github.eliankars.multiple-counters.sdPlugin/README.md
+com.github.eliankars.multiple-counters.sdPlugin/
 keep/Category.psd
 keep/Counter action.psd
 keep/Marketplace.png
