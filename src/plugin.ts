@@ -1,5 +1,5 @@
 import streamDeck, { LogLevel } from "@elgato/streamdeck";
-import { IncrementCounter, ResetCounters } from "./actions/increment-counter";
+import { IncrementCounter, ResetCounters } from "./actions/multiple-counters";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
