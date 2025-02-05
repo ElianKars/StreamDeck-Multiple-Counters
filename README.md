@@ -5,6 +5,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## Features
+<img src="preview1.jpg" align="right" height="150" width="300" alt="Photo of the buttons in action">
 - Create multiple counter action buttons
 - Assign the ID of a reset action button
 - Reset multiple counters with one push
@@ -12,7 +13,6 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 - Customize counter background color
 - Customize reset background color
 - Reset button ask's for confirmation
-<img src="preview1.jpg" align="right" height="150" width="300" alt="Photo of the buttons in action">
 - Choose from a list of basic background colors, each color also has an adjusted version '_(c)_' to provide better contrast with white text according to WCAG contrast requirements (minimum 4.5:1 ratio).
 
 
