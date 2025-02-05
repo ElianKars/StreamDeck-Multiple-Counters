@@ -5,7 +5,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 <br/>
 <br/>
 
-## Features
+## ✨Features
 <img src="preview1.jpg" align="right" height="150" width="300" alt="Photo of the buttons in action">
 
 - Create multiple counter action buttons
@@ -76,6 +76,6 @@ Built with:
 [MIT License](LICENSE)
 
 
-##
+## 😼
 > [!CAUTION]
 > Beware: Cats are planning to take over the world! First, they steal our keyboards. Then, world domination.
