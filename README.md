@@ -3,7 +3,7 @@
 
 A Stream Deck plugin that lets you group multiple counters and reset them all with a single button press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.
 
-<img src="preview1.jpg" align="left" height="400" width="200" alt="Photo of the buttons in action">
+<img src="preview1.jpg" align="right" height="300" width="150" alt="Photo of the buttons in action">
 
 ## Features
 - Create multiple counter action buttons
