@@ -25,6 +25,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## 🔧 Usage
+<img src="preview2.jpg" height="400" width="800" alt="Photo of the buttons in action">
 ### Counter Action
 1. Drag the Counter action to your Stream Deck
 2. Configure settings:
