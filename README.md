@@ -72,6 +72,7 @@ _Typical use-case:_ The Counter is incremented by a Multi Action, so this button
 **Changed (possibly BREAKING)**
 - **New field names**
 The new functionality required some field renaming, plus two new fields.
+
 | Old field                         | New field              | Applies to                         |
 | --------------------------------- | ---------------------- | ---------------------------------- |
 | `sharedId`                        | `Reset group ID`       | Increment Counter                  |
