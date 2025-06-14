@@ -19,7 +19,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## 🚀Installation
-1. Download _Multiple Counters_ plugin in the Stream Deck Store or [here](https://github.com/ElianKars/StreamDeck-Multiple-Counters/releases/tag/Latest).
+1. Find the _Multiple Counters_ plugin in the Stream Deck Store or download [here](https://github.com/ElianKars/StreamDeck-Multiple-Counters/releases/tag/Latest).
 2. Double-click the downloaded file to install
 3. Stream Deck will automatically add the plugin
 
@@ -30,31 +30,59 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 ### Counter Action
 1. Drag the Counter action to your Stream Deck
 2. Configure settings:
-   - **Prefix Title:** Set your counter label
-   - **Increment By:** Choose value between `1-10`
-   - **Shared ID:** Set an ID to group counters for reset. Must match with reset action. Example: `group1`
-   - **Background Color:** Choose a color
+   - **`Title`**: Leave this field blank; it is only read for styling (font, size, alignment), not for the counter label.
+   - **`Prefix Title`:** Set your label shown before the value.
+   - **`Increment By`:** Choose value between `1-10`.
+   - **`Sync group ID`:** Set an ID to group counters for synchronised increment. Example: `sync1`
+   - **`Reset group ID`:** Set an ID to group counters for reset. Must match with 'Reset group ID' in a reset action. Example: `reset1`
+   - **`Display-only`:** Button shows the live value but ignores presses. Counter can still be updated in a sync group.
+   - **`Background Color`:** Choose a color.
 
 > [!IMPORTANT]  
-> Use the `Prefix Title` field, not the built-in `Title` field. You can use the Title field only for text formatting.
+> Enter your label in `Prefix Title`. Use the built-in `Title` box only to style the text (font, size, alignment).
 
 
 ### Reset Action
-1. Drag the Counter action to your Stream Deck
+1. Drag the Reset action to your Stream Deck
 2. Configure settings:
-   - **Initial title:** Set the initial title for the reset action
-   - **Target Shared ID:** Match with counters you want to reset. Example: `group1`
-   - **Background Color:** Choose normal state color
-   - **Confirm Reset:** Enable/disable double-press confirmation
-   - **Confirm title:** Set the title shown during the confirmation wait
-   - **Wait Time:** Set confirmation timeout `1-60 seconds`
-   - **Confirmation Color:** Choose color for confirmation state
+   - **`Title`**: Leave this field blank; it is only read for styling (font, size, alignment), not for the counter label.
+   - **`Normal-state title`:** Set the initial title for the reset action.
+   - **`Reset group ID`:** Match with counters you want to reset to 0. Example: `reset1`
+   - **`Background Color`:** Choose normal state color.
+   - **`Confirm Reset`:** Enable/disable double-press confirmation.
+   - **`Confirm title`:** Set the title shown during the confirmation wait.
+   - **`Second press timeout`:** Set confirmation timeout: `1-60 seconds`
+   - **`Confirmation background color`:** Choose color for confirmation state.
 
 > [!IMPORTANT]  
-> Use the `Prefix Title` field, not the built-in `Title` field. You can use the Title field only for text formatting.
+> Enter your label in `Normal-state title`. Use the built-in `Title` box only to style the text (font, size, alignment).
 
 
 ## 📝Changelog
+### beta-1.1.0
+**Added**
+- **Counter synchronisation**
+Counters that share the same `Sync group ID` mirror each other. Incrementing any one of them immediately updates the others.
+_Typical use-case:_ embed a hidden Counter in a Multi Action to bump a visible Counter button. See the _Usage_ section for details.
+
+- **Display-only counters**
+Set 'Display-only' to prevent user input; pressing it won't do anything.
+_Typical use-case:_ The Counter is incremented by a Multi Action, so this button should serve purely as a display and not accept direct input.
+
+**Changed (possibly BREAKING)**
+- **New field names**
+The new functionality required some field renaming, plus two new fields.
+| Old field                         | New field              | Applies to                         |
+| --------------------------------- | ---------------------- | ---------------------------------- |
+| `sharedId`                        | `Reset group ID`       | Increment Counter                  |
+| `---`                             | `Sync group ID`        | Increment Counter / Reset Counters |
+| `---`                             | `Display only`         | Increment Counter                  |
+| `Target Shared ID`                | `Reset group ID`       | Reset Counters                     |
+| `Initial title`                   | `Normal-state title`   | Reset Counters                     |
+| `Wait for confirmation (seconds)` | `Second press timeout` | Reset Counters                     |
+
+<ins>Upgrade note:</ins> Profiles created prior to this version may show empty values for the renamed fields; set them once to re-link.
+
 ### 1.0.1
 - Minor textual adjustments
 ### 1.0.0

@@ -40,10 +40,29 @@ function setActionImage(action: any, backgroundColor: string | undefined): Promi
  * @param actionType - The type of action being logged.
  */
 function logActionDetails(event: any, settings: any, actionType: string): void {
-  const { column, row } = event.payload.coordinates;
-  const { prefixTitle, count, sharedId } = settings;
-  const actionUUID = event.actionUUID;
-  streamDeck.logger.trace(`Action: ${actionType}, UUID: ${actionUUID}, Position: (${column}, ${row}), Prefix Title: ${prefixTitle}, Count: ${count}, Shared ID: ${sharedId}`);
+  const payload = event.payload ?? {};
+
+  // Is in multi-action?
+  const inMultiAction = payload.isInMultiAction === true;
+  // Coordinates only available in top-level actions
+  const coords = payload.coordinates as { column: number; row: number } | undefined;
+
+  // Position tag: "[col,row]" for normal keys, "[MA]" for Multi-Action children, "[–]" when no position data
+  const pos = coords
+    ? `[${coords.column},${coords.row}]`     // bv. [2,0]
+    : inMultiAction
+      ? "[MA]"                               // Multi Action-child
+      : "[–]";                               // Inspector-/global event
+
+  // 4. Andere metadata loggen
+  const { prefixTitle, count, resetGroupId, syncGroupId } = settings ?? {};
+  const uuid = event.actionUUID ?? event.context ?? "unknown";
+
+  streamDeck.logger.trace(
+    `Action: ${actionType}, UUID: ${uuid}, Pos: ${pos}, ` +
+    `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
+    `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}`
+  );
 }
 
 /**
@@ -63,10 +82,11 @@ export class IncrementCounter extends SingletonAction<incrementSettings> {
 
     incrementActionIds.add(uniqueActionId);
     
+    logActionDetails(ev, settings, "IncrementCounter.onWillAppear");
+
     // Update the title and image of the button
     setActionImage(ev.action, settings.backgroundColor);
     setActionTitle(ev.action, prefixTitle, count);
-    logActionDetails(ev, settings, "IncrementCounter.onWillAppear");
   }
 
   /**
@@ -75,14 +95,31 @@ export class IncrementCounter extends SingletonAction<incrementSettings> {
   override async onKeyDown(ev: KeyDownEvent<incrementSettings>): Promise<void> {
     const uniqueActionId = ev.action.id ?? "unknown-uniqueActionId";
     const settings = ev.payload.settings ?? {};
+    const syncGroupId = settings.syncGroupId ?? "default";
     
-    settings.incrementBy ??= 1;
-    settings.count = (settings.count ?? 0) + settings.incrementBy;
-    
-    // Update both the action settings and the global state
-    await setActionImage(ev.action, settings.backgroundColor);
-    await ev.action.setSettings(settings);
-    await setActionTitle(ev.action, settings.prefixTitle, settings.count);
+    if (!settings.displayOnly) {
+      settings.incrementBy ??= 1;
+      settings.count = (settings.count ?? 0) + settings.incrementBy;
+      
+      // Update both the action settings and the global state
+      await setActionImage(ev.action, settings.backgroundColor);
+      await ev.action.setSettings(settings);
+      await setActionTitle(ev.action, settings.prefixTitle, settings.count);
+
+      // --- NEW: propagate increment to all counters in the same syncGroupId ---
+      const syncPromises = Array.from(incrementActionIds).map(async id => {
+        if (id === ev.action.id) return; // skip self
+        const a = streamDeck.actions.getActionById(id)!;
+        const s = await a.getSettings<incrementSettings>();
+        if (s.syncGroupId === syncGroupId) {
+          s.count = (s.count ?? 0) + settings.incrementBy!;
+          await a.setSettings(s);
+          await setActionTitle(a, s.prefixTitle, s.count);
+        }
+      });
+      await Promise.all(syncPromises);
+      
+    }
     logActionDetails(ev, settings, "IncrementCounter.onKeyDown");
   }
 
@@ -106,9 +143,9 @@ export class ResetCounters extends SingletonAction<resetSettings> {
    */
   override onWillAppear(ev: WillAppearEvent<resetSettings>): void | Promise<void> {
     const settings = ev.payload.settings ?? {};
-    const initialTitle = settings.initialTitle ?? "";
+    const idleTitle = settings.idleTitle ?? "";
     setActionImage(ev.action, settings.backgroundColor);
-    ev.action.setTitle(initialTitle);
+    ev.action.setTitle(idleTitle);
     logActionDetails(ev, settings, "ResetCounters.onWillAppear");
   }
 
@@ -118,7 +155,7 @@ export class ResetCounters extends SingletonAction<resetSettings> {
   override async onKeyDown(ev: KeyDownEvent<resetSettings>): Promise<void> {
     const settings = ev.payload.settings ?? {};
     const confirmReset = settings.confirmReset ?? false;
-    const confirmResetWaitTime = (settings.confirmResetWaitTime ?? 5) * 1000;
+    const confirmResetWaitTime = (settings.confirmTimeout ?? 5) * 1000;
 
     // Check if the the user wants to confirm the reset first else perform the reset action immediately
     if (confirmReset) {
@@ -129,25 +166,25 @@ export class ResetCounters extends SingletonAction<resetSettings> {
         await setActionImage(ev.action, settings.confirmBackgroundColor);
         setTimeout(() => {
             confirmed = false;
-            ev.action.setTitle(settings.initialTitle);
+            ev.action.setTitle(settings.idleTitle);
             setActionImage(ev.action, settings.backgroundColor);
         }, confirmResetWaitTime); // Reset after specified wait time
         return;
       } else {
         // Second press: perform the action
         confirmed = false;
-        await ev.action.setTitle(settings.initialTitle);
+        await ev.action.setTitle(settings.idleTitle);
         await setActionImage(ev.action, settings.backgroundColor);
       }
     }
 
-    // Perform the reset, reset all counters with the same sharedId to 0
-    const targetSharedId = settings.targetSharedId ?? "default";
+    // Perform the reset, reset all counters with the same resetGroupId to 0
+    const resetGroupId = settings.resetGroupId ?? "default";
     const resetPromises = Array.from(incrementActionIds).map(async (uniqueActionId) => {
     const action = streamDeck.actions.getActionById(uniqueActionId)!;                       // Non-null assertion operator used to ensure action is not undefined
     const incSettings = await action.getSettings<incrementSettings>() as incrementSettings; // Type assertion to specify the type of settings
 
-      if (targetSharedId == incSettings.sharedId && incSettings) {
+      if (resetGroupId == incSettings.resetGroupId && incSettings) {
         incSettings.count = 0; // Reset the counter
         await action.setSettings(incSettings);
         await setActionTitle(action, incSettings.prefixTitle, 0);
@@ -162,10 +199,10 @@ export class ResetCounters extends SingletonAction<resetSettings> {
    */
   override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<resetSettings>): Promise<void> {
     const settings = ev.payload.settings ?? {};
-    const initialTitle = settings.initialTitle ?? "";
+    const idleTitle = settings.idleTitle ?? "";
 
     await setActionImage(ev.action, settings.backgroundColor);
-    await ev.action.setTitle(initialTitle);
+    await ev.action.setTitle(idleTitle);
     logActionDetails(ev, settings, "IncrementCounter.onDidReceiveSettings");
   }
 }
@@ -174,12 +211,13 @@ export class ResetCounters extends SingletonAction<resetSettings> {
  * Settings for the IncrementCounter action.
  */
 type incrementSettings = {
-  gotInitialTitle?: boolean;  // Whether the initial title has been set
   prefixTitle?: string;       // Optional prefix for the title
   count?: number;             // Current count value
   incrementBy?: number;       // Value to increment by
   uniqueActionId?: string;    // Unique identifier for the action
-  sharedId?: string;          // Counters with the same sharedId can be reset together
+  syncGroupId?: string;       // Counters with the same syncGroupId will be synchronized
+  resetGroupId?: string;      // Counters with the same resetGroupId can be reset together
+  displayOnly?: boolean;      // Whether the counter is display-only
   backgroundColor?: string;   // Background color for the action
 };
 
@@ -187,11 +225,11 @@ type incrementSettings = {
  * Settings for the ResetCounters action.
  */
 type resetSettings = {
-  initialTitle?: string;            // Initial title before reset confirmation
-  targetSharedId?: string;          // Only counters with the same sharedId will be reset
+  idleTitle?: string;            // Title when idle, normal title
+  resetGroupId?: string;             // Only counters with the same resetGroupId will be reset
   backgroundColor?: string;         // Background color for the action
   confirmReset?: boolean;           // Whether to confirm reset
   confirmTitle: string;             // Title for confirmation
-  confirmResetWaitTime?: number;    // Wait time for reset confirmation
+  confirmTimeout?: number;      // Timeout for confirmation in seconds
   confirmBackgroundColor?: string;  // Background color for confirmation
 };
