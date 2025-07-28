@@ -59,7 +59,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## 📝Changelog
-### beta-1.1.0
+### 1.1.0
 **Added**
 - **Counter synchronisation**
 Counters that share the same `Sync group ID` mirror each other. Incrementing any one of them immediately updates the others.
