@@ -17,8 +17,14 @@
     <sdpi-item label="Increment By">
         <sdpi-range setting="incrementBy" min="1" max="10" step="1" default="1" showlabels></sdpi-range>
     </sdpi-item>
-    <sdpi-item label="Shared ID">
-        <sdpi-textfield setting="sharedId" placeholder="Enter shared ID"></sdpi-textfield>
+    <sdpi-item label="Sync group ID">
+        <sdpi-textfield setting="syncGroupId" placeholder="Enter sync group ID"></sdpi-textfield>
+    </sdpi-item>
+    <sdpi-item label="Reset group ID">
+        <sdpi-textfield setting="resetGroupId" placeholder="Enter reset group ID"></sdpi-textfield>
+    </sdpi-item>
+    <sdpi-item label="Display-only">
+        <sdpi-checkbox id="displayOnly" setting="displayOnly" checked="false" placeholder="Display-only tile — value can still be updated by other counters"></sdpi-checkbox>
     </sdpi-item>
     <sdpi-item label="Background color">
         <sdpi-select setting="backgroundColor" placeholder="Please choose a color">
