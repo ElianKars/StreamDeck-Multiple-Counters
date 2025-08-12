@@ -2,11 +2,11 @@
 node_modules/
 
 # Stream Deck files
-*.sdPlugin/bin
-*.sdPlugin/logs
-com.github.eliankars.multiple-counters.sdPlugin/
+*.sdPlugin/logs/*
+!*.sdPlugin/logs/.gitkeep
 keep/Category.psd
 keep/Counter action.psd
 keep/Marketplace.png
 keep/Preview1.jpg
 keep/Reset action.psd
+com.github.eliankars.multiple-counters.streamDeckPlugin

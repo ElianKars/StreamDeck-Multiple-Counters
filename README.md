@@ -28,13 +28,15 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 <img src="preview2.jpg" height="400" width="800" alt="Photo of the buttons in action">
 
 ### Counter Action
-1. Drag the Counter action to your Stream Deck
+1. Drag the Counter Action to your Stream Deck
 2. Configure settings:
    - **`Title`**: Leave this field blank; it is only read for styling (font, size, alignment), not for the counter label.
    - **`Prefix Title`:** Set your label shown before the value.
    - **`Increment By`:** Choose value between `1-10`.
    - **`Sync group ID`:** Set an ID to group counters for synchronised increment. Example: `sync1`
-   - **`Reset group ID`:** Set an ID to group counters for reset. Must match with 'Reset group ID' in a reset action. Example: `reset1`
+   - **`Reset group ID`:** Set an ID to group counters for reset. Must match with 'Reset group ID' in a Reset Action. Example: `reset1`
+   - **`Hold → reset tile (ms)`:** Milliseconds to press and hold the key, to reset this counter to 0. Useful if you prefer not to use a separate Reset Action.
+   - **`Hold → reset group (ms)`:** Milliseconds to press and hold the key, to reset all counters that share the same Reset group ID to 0. Useful if you prefer not to use a separate Reset Action.
    - **`Display-only`:** Button shows the live value but ignores presses. Counter can still be updated in a sync group.
    - **`Background Color`:** Choose a color.
 
@@ -43,10 +45,10 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ### Reset Action
-1. Drag the Reset action to your Stream Deck
+1. Drag the Reset Action to your Stream Deck
 2. Configure settings:
    - **`Title`**: Leave this field blank; it is only read for styling (font, size, alignment), not for the counter label.
-   - **`Normal-state title`:** Set the initial title for the reset action.
+   - **`Normal-state title`:** Set the initial title for the Reset Action.
    - **`Reset group ID`:** Match with counters you want to reset to 0. Example: `reset1`
    - **`Background Color`:** Choose normal state color.
    - **`Confirm Reset`:** Enable/disable double-press confirmation.
@@ -59,6 +61,13 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## 📝Changelog
+### beta-1.2.0
+**Added**
+- **Long‑press resets for the Counter Action**
+Prefer not to use a separate Reset Action? Long-press your Counter Action key instead:
+`Hold → reset tile (ms)` — press and hold for the configured duration to reset only the pressed tile to 0.
+`Hold → reset group (ms)` — press and hold for the configured duration to reset all counters that share the Reset group ID to 0.
+Default duration: 10,000 ms (10 s) — effectively disabled by default.
 ### 1.1.0
 **Added**
 - **Counter synchronisation**

@@ -23,6 +23,12 @@
     <sdpi-item label="Reset group ID">
         <sdpi-textfield setting="resetGroupId" placeholder="Enter reset group ID"></sdpi-textfield>
     </sdpi-item>
+    <sdpi-item label="Hold → reset tile (ms)">
+    <sdpi-range setting="longPressTileReset" min="500" max="10000" step="250" default="10000" showlabels></sdpi-range>
+    </sdpi-item>
+    <sdpi-item label="Hold → reset group (ms)">
+    <sdpi-range setting="longPressGroupReset" min="1000" max="10000" step="250" default="10000" showlabels></sdpi-range>
+    </sdpi-item>
     <sdpi-item label="Display-only">
         <sdpi-checkbox id="displayOnly" setting="displayOnly" checked="false" placeholder="Display-only tile — value can still be updated by other counters"></sdpi-checkbox>
     </sdpi-item>
