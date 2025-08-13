@@ -1,6 +1,6 @@
 {
 	"Name": "Multiple Counters",
-	"Version": "1.2.0.0",
+	"Version": "1.2.0.1",
 	"Author": "Elian Kars",
 	"Actions": [
 		{
@@ -42,7 +42,7 @@
 	"Category": "Multiple Counters",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "[BETA Version beta-1.2.0.0] Test build — A Stream Deck plugin that lets you group multiple counters and reset them all with a single button press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.",
+	"Description": "[BETA Version beta-1.2.0.1] Test build — A Stream Deck plugin that lets you group multiple counters and reset them all with a single button press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.",
 	"URL": "https://github.com/ElianKars/StreamDeck-Multiple-Counters",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 2,

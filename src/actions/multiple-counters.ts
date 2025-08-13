@@ -7,7 +7,7 @@ const backgroundColorPath = "imgs/actions/background/";
 let confirmed = false;
 
 const pressStart = new Map<string, number>(); // Store the press start time per context
-const DEFAULT_LONG_PRESS_TILE_RESET = 10000;  // Default milliseconds is set in counter.html, this is just a technical fallback
+const DEFAULT_LONG_PRESS_KEY_RESET = 10000;  // Default milliseconds is set in counter.html, this is just a technical fallback
 const DEFAULT_LONG_PRESS_GROUP_RESET = 10000;
 
 /**
@@ -57,7 +57,7 @@ function logActionDetails(event: any, settings: any, actionType: string): void {
       : "[–]";                               // Inspector-/global event
 
   // Log other metadata
-  const { prefixTitle, count, resetGroupId, syncGroupId, displayOnly, incrementBy, longPressTileReset, longPressGroupReset} = settings ?? {};
+  const { prefixTitle, count, resetGroupId, syncGroupId, displayOnly, incrementBy, longPressKeyReset, longPressGroupReset} = settings ?? {};
 
   const uuid = event.actionUUID ?? event.context ?? "unknown";
 
@@ -69,7 +69,7 @@ function logActionDetails(event: any, settings: any, actionType: string): void {
     `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
     `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}, ` +
     `DispOnly: ${displayOnly === true ? 1 : 0}, Step: ${incrementBy ?? 1}, ` +
-    `LPtile: ${longPressTileReset ?? DEFAULT_LONG_PRESS_TILE_RESET}, ` +
+    `LPkey: ${longPressKeyReset ?? DEFAULT_LONG_PRESS_KEY_RESET}, ` +
     `LPgrp: ${longPressGroupReset ?? DEFAULT_LONG_PRESS_GROUP_RESET}`
    );
 }
@@ -118,21 +118,21 @@ export class IncrementCounter extends SingletonAction<incrementSettings> {
     const start = pressStart.get(uniqueActionId) ?? Date.now(); // Get the start time or use current time if not set
     const held = Date.now() - start;
     const s = await ev.action.getSettings<incrementSettings>();
-    const longPressTileResetHold  = settings.longPressTileReset ??= DEFAULT_LONG_PRESS_TILE_RESET;
+    const longPressKeyResetHold  = settings.longPressKeyReset ??= DEFAULT_LONG_PRESS_KEY_RESET;
     const longPressGroupResetHold = settings.longPressGroupReset ??= DEFAULT_LONG_PRESS_GROUP_RESET;
     
     if (!uniqueActionId) return // If no uniqueActionId, do nothing
 
     pressStart.delete(uniqueActionId); // Remove the start time after use 
 
-    // 1) Reset all tiles in the same resetGroupId on long press
+    // 1) Reset all keys in the same resetGroupId on long press
     if (held >= longPressGroupResetHold && (s.resetGroupId ?? "").trim() !== "") {
       await resetGroupById(s.resetGroupId!);
       return;
     }
 
-    // 2) Or, reset the current tile on long press
-    if (held >= longPressTileResetHold) {
+    // 2) Or, reset the current key on long press
+    if (held >= longPressKeyResetHold) {
       s.count = 0;
       await ev.action.setSettings(s);
       await setActionTitle(ev.action, s.prefixTitle, 0);
@@ -276,7 +276,7 @@ type incrementSettings = {
   resetGroupId?: string;        // Counters with the same resetGroupId can be reset together
   displayOnly?: boolean;        // Whether the counter is display-only
   backgroundColor?: string;     // Background color for the action
-  longPressTileReset?: number;  // Time in milliseconds to reset the current tile on long press
+  longPressKeyReset?: number;  // Time in milliseconds to reset the current key on long press
   longPressGroupReset?: number; // Time in milliseconds to reset all counters in the same resetGroupId on long press
 };
 
