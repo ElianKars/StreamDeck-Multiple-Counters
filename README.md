@@ -63,18 +63,18 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 ## 📝Changelog
 ### beta-1.2.0
 **Added**
-- **Long‑press resets for the Counter Action**
-Prefer not to use a separate Reset Action? Long-press your Counter Action key instead:
-`Hold → reset tile (ms)` — press and hold for the configured duration to reset only the pressed tile to 0.
-`Hold → reset group (ms)` — press and hold for the configured duration to reset all counters that share the Reset group ID to 0.
+- **Long‑press resets for the Counter Action**<br/>
+Prefer not to use a separate Reset Action? Long-press your Counter Action key instead:<br/>
+`Hold → reset tile (ms)` — press and hold for the configured duration to reset only the pressed tile to 0.<br/>
+`Hold → reset group (ms)` — press and hold for the configured duration to reset all counters that share the Reset group ID to 0.<br/>
 Default duration: 10,000 ms (10 s) — effectively disabled by default.
 ### 1.1.0
 **Added**
-- **Counter synchronisation**
+- **Counter synchronisation**<br/>
 Counters that share the same `Sync group ID` mirror each other. Incrementing any one of them immediately updates the others.
 _Typical use-case:_ embed a hidden Counter in a Multi Action to bump a visible Counter button. See the _Usage_ section for details.
 
-- **Display-only counters**
+- **Display-only counters**<br/>
 Set 'Display-only' to prevent user input; pressing it won't do anything.
 _Typical use-case:_ The Counter is incremented by a Multi Action, so this button should serve purely as a display and not accept direct input.
 
