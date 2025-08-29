@@ -1,21 +1,21 @@
 # Multiple Counters for Stream Deck
 <img src="multiple-counters-icon.png" align="right" height="150" width="150" alt="'Multiple Counters' Plugin icon">
 
-A Stream Deck plugin that lets you group multiple counters and reset them all with a single button press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.
+A Stream Deck plugin that lets you group multiple counters and reset them all with a single press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.
 <br/>
 <br/>
 
 ## ✨Features
-<img src="preview1.jpg" align="right" height="150" width="300" alt="Photo of the buttons in action">
+<img src="preview1.jpg" align="right" height="150" width="300" alt="Photo of the keys in action">
 
-- Create multiple counter action buttons
-- Assign the ID of a reset action button
-- Reset multiple counters with one push
-- Increment/decrement counters individually
-- Customize counter background color
-- Customize reset background color
-- Reset button ask's for confirmation
-- Choose from a list of basic background colors, each color also has an adjusted version '_(c)_' to provide better contrast with white text according to WCAG contrast requirements (minimum 4.5:1 ratio).
+- Create multiple counter keys
+- Increment counters individually or synchronised as a group
+- Two ways to reset: either hold the counter key or use a dedicated Reset Action key
+- Reset multiple counters at once
+- Optional confirmation before reset
+- Customize background colors
+- Works seamlessly inside Multi Actions
+- Display-only counters for use as passive displays (e.g. updated via Multi Actions)
 
 
 ## 🚀Installation
@@ -25,7 +25,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 
 
 ## 🔧 Usage
-<img src="preview2.jpg" height="400" width="800" alt="Photo of the buttons in action">
+<img src="preview2.jpg" height="400" width="800" alt="Photo of the keys in action">
 
 ### Counter Action
 1. Drag the Counter Action to your Stream Deck
@@ -37,7 +37,7 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
    - **`Reset group ID`:** Set an ID to group counters for reset. Must match with 'Reset group ID' in a Reset Action. Example: `reset1`
    - **`Hold → reset key (ms)`:** Milliseconds to press and hold the key, to reset this counter to 0. Useful if you prefer not to use a separate Reset Action.
    - **`Hold → reset group (ms)`:** Milliseconds to press and hold the key, to reset all counters that share the same Reset group ID to 0. Useful if you prefer not to use a separate Reset Action.
-   - **`Display-only`:** Button shows the live value but ignores presses. Counter can still be updated in a sync group.
+   - **`Display-only`:** Key shows the live value but ignores presses. Counter can still be updated in a sync group.
    - **`Background Color`:** Choose a color.
 
 > [!IMPORTANT]  
@@ -53,14 +53,27 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
    - **`Background Color`:** Choose normal state color.
    - **`Confirm Reset`:** Enable/disable double-press confirmation.
    - **`Confirm title`:** Set the title shown during the confirmation wait.
-   - **`Second press timeout`:** Set confirmation timeout: `1-60 seconds`
+   - **`Second press timeout (ms)`:** Set confirmation timeout in milliseconds.
    - **`Confirmation background color`:** Choose color for confirmation state.
+
+Each backgroundcolor also has an adjusted version '_(c)_' to provide better contrast with white text according to WCAG contrast requirements (minimum 4.5:1 ratio)
 
 > [!IMPORTANT]  
 > Enter your label in `Normal-state title`. Use the built-in `Title` box only to style the text (font, size, alignment).
 
 
 ## 📝Changelog
+### beta-1.2.1
+**Changed**
+- **Counter settings: Instant long-press actions**<br/>
+Hold-to-reset now fire while the key is still held down instead of waiting for you to release the key.
+
+- **UI change**<br/>
+While a slider seems logical to input milliseconds, it doesn’t work well in the Stream Deck UI.
+Counter settings: 'Hold → reset key' and 'Hold → reset group' now use a textfield instead of the slider.<br/>
+⚠️**BREAKING** After updating, existing profiles must re-enter these values once, as slider positions are not migrated.<br/>
+Reset settings: 'Second press timeout' now use a textfield instead of the slider.<br/>
+
 ### beta-1.2.0
 **Added**
 - **Long‑press resets for the Counter Action**<br/>
@@ -72,7 +85,7 @@ Default duration: 10,000 ms (10 s), so effectively disabled by default.
 **Added**
 - **Counter synchronisation**<br/>
 Counters that share the same `Sync group ID` mirror each other. Incrementing any one of them immediately updates the others.
-_Typical use-case:_ embed a hidden Counter in a Multi Action to bump a visible Counter button. See the _Usage_ section for details.
+_Typical use-case:_ embed a hidden Counter in a Multi Action to bump a visible Counter key. See the _Usage_ section for details.
 
 - **Display-only counters**<br/>
 Set 'Display-only' to prevent user input; pressing it won't do anything.

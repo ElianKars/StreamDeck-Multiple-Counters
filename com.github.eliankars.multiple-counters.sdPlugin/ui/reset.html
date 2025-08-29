@@ -68,9 +68,8 @@
     <sdpi-item label="Confirm title">
         <sdpi-textarea setting="confirmTitle" default="default" placeholder="Enter title shown during confirmation wait" rows="3"></sdpi-textarea>
     </sdpi-item>
-    <sdpi-item label="Second press timeout">
-        <sdpi-range id="confirmTimeout" setting="confirmTimeout" min="1" max="60" step="1" default="5" showlabels></sdpi-range>
-    </sdpi-item>
+    <sdpi-item label="Second press timeout (ms)">
+        <sdpi-textfield setting="confirmTimeout" default="5000" placeholder="Time in ms to wait for second press">></sdpi-textfield>
     </sdpi-item>
     <sdpi-item label="Confirmation background color">
         <sdpi-select setting="confirmBackgroundColor" placeholder="Please choose a color">

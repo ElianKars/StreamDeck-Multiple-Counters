@@ -7949,10 +7949,11 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
 // Shared state to keep track of all counters.
 const incrementActionIds = new Set();
 const backgroundColorPath = "imgs/actions/background/";
-let confirmed = false;
-const pressStart = new Map(); // Store the press start time per context
-const DEFAULT_LONG_PRESS_KEY_RESET = 10000; // Default milliseconds is set in counter.html, this is just a technical fallback
-const DEFAULT_LONG_PRESS_GROUP_RESET = 10000;
+let confirmed = false; // For reset action confirmation
+const longPressTimers = new Map();
+// Set of context-ids (keys) for which *one* of the timers has already executed. User can press multiple keys.
+// Tells onKeyUp() that a long-press action has happened, so it must *skip* the normal +1 because we want to reset instead.
+const longPressHandled = new Set();
 /**
  * Sets the title of the action button.
  * @param action - The action instance.
@@ -7975,6 +7976,15 @@ function setActionImage(action, backgroundColor) {
         return action.setImage(`${backgroundColorPath}${backgroundColor}`);
     }
     return Promise.resolve();
+}
+// Convert user input to a positive integer in ms, or return undefined if invalid.
+// Accepts "2000", 2000   ✔              Accepts "2.5", "-1", "abc"   ✘
+function isValidPosNumber(v) {
+    if (typeof v === "number" && Number.isInteger(v) && v > 0)
+        return v;
+    if (typeof v === "string" && /^\d+$/.test(v.trim()))
+        return Number(v.trim());
+    return undefined; // anything else → not a valid hold time
 }
 /**
  * Logs the action details.
@@ -8004,8 +8014,8 @@ function logActionDetails(event, settings, actionType) {
         `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
         `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}, ` +
         `DispOnly: ${displayOnly === true ? 1 : 0}, Step: ${incrementBy ?? 1}, ` +
-        `LPkey: ${longPressKeyReset ?? DEFAULT_LONG_PRESS_KEY_RESET}, ` +
-        `LPgrp: ${longPressGroupReset ?? DEFAULT_LONG_PRESS_GROUP_RESET}`);
+        `LPkey: ${longPressKeyReset}, ` +
+        `LPgrp: ${longPressGroupReset}`);
 }
 /**
  * Increment Counter Action
@@ -8042,54 +8052,72 @@ let IncrementCounter = (() => {
         }
         /**
          * Called when the action's key is pressed.
+         * The timer with the shortest configured hold time fires first. If that’s the **group-reset**, the key-reset callback will notice
+         * `longPressHandled` is already set and will do nothing. If that’s the **key-reset**, this group-reset timer will be cleared
+         * later in `onKeyUp` without ever executing.
          */
         async onKeyDown(ev) {
-            const settings = (ev.payload.settings ?? {});
-            pressStart.set(ev.action.id, Date.now()); // Register start time for long press detection
-            logActionDetails(ev, settings, "IncrementCounter.onKeyDown");
+            const ctx = ev.action.id; // context ID of this action instance
+            const s = (ev.payload.settings ?? {});
+            // 1) Start a group-reset timer. This timer is only created if a resetGroupId is set.
+            if (isValidPosNumber(s.longPressGroupReset) && (s.resetGroupId ?? "").trim() !== "") {
+                const tGrp = setTimeout(async () => {
+                    await resetGroupById(s.resetGroupId);
+                    longPressHandled.add(ctx); // mark as handled, so onKeyUp() will skip normal +1
+                    longPressTimers.delete(ctx); // remove all timers for this context
+                }, s.longPressGroupReset); // optionele feedback, bv. await ev.action.setTitle("🔄");
+                longPressTimers.set(ctx, { group: tGrp });
+            }
+            // 2) Key-reset timer. This timer is always created. It might run before or after the group-timer.
+            if (isValidPosNumber(s.longPressKeyReset)) {
+                const tKey = setTimeout(async () => {
+                    if (longPressHandled.has(ctx))
+                        return; // exit, group-reset already happened
+                    const cur = await ev.action.getSettings();
+                    cur.count = 0;
+                    await ev.action.setSettings(cur);
+                    await setActionTitle(ev.action, cur.prefixTitle, 0);
+                    longPressHandled.add(ctx); // mark as handled    
+                    longPressTimers.delete(ctx); // and remove all timers for this context   
+                }, s.longPressKeyReset);
+                // Update (or create) the timer record for this context: `longPressTimers` may already contain the *group-reset* timer.
+                // We add the *key-reset* timer (`tKey`) to that same record, so both timers for this tile are tracked together in one place.
+                const timers = longPressTimers.get(ctx) ?? {};
+                timers.key = tKey;
+                longPressTimers.set(ctx, timers);
+            }
+            logActionDetails(ev, s, "IncrementCounter.onKeyDown");
         }
         /**
         * Called when the action's key is released.
         */
         async onKeyUp(ev) {
+            const ctx = ev.action.id;
             const settings = (ev.payload.settings ?? {});
-            const uniqueActionId = ev.action.id ?? settings.uniqueActionId;
-            const syncGroupId = settings.syncGroupId ?? "default";
-            const start = pressStart.get(uniqueActionId) ?? Date.now(); // Get the start time or use current time if not set
-            const held = Date.now() - start;
-            const s = await ev.action.getSettings();
-            const longPressKeyResetHold = settings.longPressKeyReset ??= DEFAULT_LONG_PRESS_KEY_RESET;
-            const longPressGroupResetHold = settings.longPressGroupReset ??= DEFAULT_LONG_PRESS_GROUP_RESET;
-            if (!uniqueActionId)
-                return; // If no uniqueActionId, do nothing
-            pressStart.delete(uniqueActionId); // Remove the start time after use 
-            // 1) Reset all keys in the same resetGroupId on long press
-            if (held >= longPressGroupResetHold && (s.resetGroupId ?? "").trim() !== "") {
-                await resetGroupById(s.resetGroupId);
+            const syncGroup = settings.syncGroupId ?? "default";
+            // 1) Did a timer already fire while the key was still down?
+            if (longPressHandled.delete(ctx))
                 return;
-            }
-            // 2) Or, reset the current key on long press
-            if (held >= longPressKeyResetHold) {
-                s.count = 0;
-                await ev.action.setSettings(s);
-                await setActionTitle(ev.action, s.prefixTitle, 0);
-                return;
-            }
-            // 3) Or just increment the counter
+            // 2) No timer fired → This was a short press → Cancel both timers still pending
+            const t = longPressTimers.get(ctx);
+            if (t?.key)
+                clearTimeout(t.key);
+            if (t?.group)
+                clearTimeout(t.group);
+            longPressTimers.delete(ctx);
+            // 3) Usual increment action
             if (!settings.displayOnly) {
                 settings.incrementBy ??= 1;
                 settings.count = (settings.count ?? 0) + settings.incrementBy;
-                // Update both the action settings and the global state
                 await setActionImage(ev.action, settings.backgroundColor);
                 await ev.action.setSettings(settings);
                 await setActionTitle(ev.action, settings.prefixTitle, settings.count);
-                // Propagate increment to all counters in the same syncGroupId ---
                 const syncPromises = Array.from(incrementActionIds).map(async (id) => {
                     if (id === ev.action.id)
                         return; // skip self
                     const a = streamDeck.actions.getActionById(id);
                     const s = await a.getSettings();
-                    if (s.syncGroupId === syncGroupId) {
+                    if (s.syncGroupId === syncGroup) {
                         s.count = (s.count ?? 0) + settings.incrementBy;
                         await a.setSettings(s);
                         await setActionTitle(a, s.prefixTitle, s.count);
