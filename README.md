@@ -72,7 +72,7 @@ Hold-to-reset now fire while the key is still held down instead of waiting for y
 While a slider seems logical to input milliseconds, it doesn’t work well in the Stream Deck UI.<br/>
 Counter settings: `Hold → reset key` and `Hold → reset group` now use a textfield instead of the slider.<br/>
 ⚠️**BREAKING** After updating, existing profiles must re-enter this values once:<br/>
-Reset settings: 'Second press timeout' now use a textfield instead of the slider.<br/>
+Reset settings: `Second press timeout` now use a textfield instead of the slider.<br/>
 
 ### beta-1.2.0
 **Added**
