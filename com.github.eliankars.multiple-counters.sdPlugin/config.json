@@ -1,4 +1,4 @@
 {
-    "logLevel": "info",
-    "logLevel comment": "Change logLevel to 'trace' for detailed logging"
+    "logLevel": "INFO",
+    "logLevel comment": "Change logLevel from INFO to TRACE for detailed logging"
 }
