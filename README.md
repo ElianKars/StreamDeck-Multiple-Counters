@@ -32,8 +32,8 @@ A Stream Deck plugin that lets you group multiple counters and reset them all wi
 2. Configure settings:
    - **`Title`**: Leave this field blank; it is only read for styling (font, size, alignment), not for the counter label.
    - **`Prefix Title`:** Set your label shown before the value.
-   - **`Initial value`:** Set an initial value for the counter. Defaults to 0 if empty.
-   - **`Inc/decrement by`:** Choose a whole number like 1 or -2. Defaults to 1 if empty.
+   - **`Initial value`:** Set an initial value for the counter. Defaults to `0` if empty.
+   - **`Inc/decrement by`:** Choose a whole number like `1` or `-2`. Defaults to `1` if empty.
    - **`Sync group ID`:** Set an ID to group counters so they all apply the same increment or decrement step when one of them is triggered. Example: `sync1`
    - **`Reset group ID`:** Set an ID to group counters for reset. Must match with 'Reset group ID' in a Reset Action. Example: `reset1`
    - **`Hold → reset key (ms)`:** Milliseconds to press and hold the key, to reset this counter to their own intial value. Useful if you prefer not to use a separate Reset Action. Disabled if left empty.
@@ -85,8 +85,8 @@ Now, when you press the Multi Action key, your program is launched, the hidden c
 
 
 ## 🐛Support
-Found a bug? [Open an issue](../../issues)
-Have a feature request? [Let me know](../../discussions/categories/ideas)
+Found a bug? [Open an issue](../../issues)<br/>
+Have a feature request? [Let me know](../../discussions/categories/ideas)<br/>
 I’d love to hear how you use it, even if you don’t have any questions.👂🏼 I’m very curious to know what kind of use case this plugin is useful for in your setup. [You’d really make my day by sharing it!❤️](../../discussions/4)
  
 
@@ -107,38 +107,28 @@ Built with:
 
 
 ## 📝Changelog
-### beta-1.2.2
-**Changed**
-- **Counter setting: `Inc/decrement by`**<br/>
-  The counter setting `Increment by` has been renamed to `Inc/decrement by`, because counters can now also be decreased.<br/>
-  Sliders do not work well in this UI, so this setting now uses a text field instead.<br/>
-  You can enter both positive and negative whole numbers (integers).<br/>
-- Adjusted the placeholder text in several UI fields to make the settings clearer.
-
+### 1.2.2
 **New**
-- `Initial value`: Now that counters can also count down, it is possible to define an initial value for each counter.
+- **Long-press reset for Counter actions**<br/>  
+Reset only the pressed counter via `Hold → reset key (ms)`.  
+Reset all counters in the same reset group via `Hold → reset group (ms)`.
+- **Initial value**<br/>
+Each counter can now start from its own configured initial value instead of always starting from `0`.
+- **Decrement support**<br/>
+Counters can now count down as well as up by entering positive or negative whole numbers in `Inc/decrement by`.
 
-**Fixed**
-- Fixed an issue where long-press reset actions could interfere with each other.
-
-### beta-1.2.1
 **Changed**
-- **Counter settings: Instant long-press actions**<br/>
-Hold-to-reset now fire while the key is still held down instead of waiting for you to release the key.
+- **`Increment by` renamed to `Inc/decrement by`**<br/>
+Better reflects support for both incrementing and decrementing.
+- **`Second press timeout (ms)` now uses a text field instead of a slider**<br/>
+This works better in the Stream Deck UI.
+- **UI text and placeholders improved**<br/>
+Several settings now have clearer labels and placeholder text.
 
-- **UI change**<br/>
-While a slider seems logical to input milliseconds, it doesn’t work well in the Stream Deck UI.<br/>
-Counter settings: `Hold → reset key` and `Hold → reset group` now use a textfield instead of the slider.<br/>
-⚠️**BREAKING** After updating, existing profiles must re-enter this values once:<br/>
-Reset settings: `Second press timeout` now use a textfield instead of the slider.<br/>
+**Upgrade note**
+- Existing profiles may need to re-enter this value once after updating:<br/>
+`Second press timeout (ms)`
 
-### beta-1.2.0
-**New**
-- **Long‑press resets for the Counter Action**<br/>
-Prefer not to use a separate Reset Action? Long-press your Counter Action key instead with this new settings:<br/>
-`Hold → reset key (ms)`: press and hold for the configured duration to reset only the pressed key to 0.<br/>
-`Hold → reset group (ms)`: press and hold for the configured duration to reset all counters that share the Reset group ID to 0.<br/>
-Default duration: 10,000 ms (10 s), so effectively disabled by default.
 ### 1.1.0
 **New**
 - **Counter synchronisation**<br/>
