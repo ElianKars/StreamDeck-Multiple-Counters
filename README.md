@@ -109,7 +109,7 @@ Built with:
 ## 📝Changelog
 ### 1.2.2
 **New**
-- **Long-press reset for Counter actions**<br/>  
+- **Long-press reset for Counter actions**<br/>
 Reset only the pressed counter via `Hold → reset key (ms)`.  
 Reset all counters in the same reset group via `Hold → reset group (ms)`.
 - **Initial value**<br/>
