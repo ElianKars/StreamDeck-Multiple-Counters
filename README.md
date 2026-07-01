@@ -1,5 +1,5 @@
 > [!CAUTION]
-> I no longer own a Stream Deck, which means I am unable to test changes myself. As a result, I cannot reliably provide further updates or fixes for this plugin.
+> I no longer have access to a Stream Deck device, which means I am unable to test changes myself. As a result, I cannot reliably provide further updates or fixes for this plugin.
 > 
 > Please use the latest version available [here](https://github.com/ElianKars/StreamDeck-Multiple-Counters/releases/tag/Latest) on Github. The Elgato Marketplace version is not up to date, as publishing there has additional requirements that I am currently unable to meet, including Stream Deck 6.4 or later compatibility, SDK Compatibility Version 2 or later, and DRM protection not being enabled.
 
