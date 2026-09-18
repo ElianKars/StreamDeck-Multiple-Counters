@@ -5,6 +5,27 @@
     <title>Increment Counter Settings</title>
     <meta charset="utf-8" />
     <script src="https://sdpi-components.dev/releases/v3/sdpi-components.js"></script>
+    <style>
+        [hidden] {
+            display: none !important;
+        }
+
+        .validation-message {
+            box-sizing: border-box;
+            margin: 0 12px 8px;
+            padding: 8px 10px;
+            border-left: 3px solid #f0ad4e;
+            background: rgba(240, 173, 78, 0.14);
+            color: #ffd98a;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .validation-message ul {
+            margin: 0;
+            padding-left: 18px;
+        }
+    </style>
 </head>
 
 <body>
@@ -14,27 +35,69 @@
     <sdpi-item label="Prefix title">
         <sdpi-textfield setting="prefixTitle" placeholder="Please use THIS title field, not the above!"></sdpi-textfield>
     </sdpi-item>
-    <sdpi-item label="initial value">
-        <sdpi-textfield setting="initialValue" placeholder="Enter the initial value, e.g. 0"></sdpi-textfield>
+    <sdpi-item label="Initial value">
+        <sdpi-textfield id="initialValue" setting="initialValue" pattern="-?[0-9]+" placeholder="e.g. 0"></sdpi-textfield>
     </sdpi-item>    
-    <sdpi-item label="Inc/decrement by">
-        <sdpi-textfield setting="incdecrementBy" placeholder="e.g. 1 or -1"></sdpi-textfield>
+    <div id="initialValueMessages" class="validation-message" role="alert" hidden></div>
+    <sdpi-item label="Inc/decrement">
+        <sdpi-checkbox id="shortPressChangeEnabled" setting="shortPressChangeEnabled" label="Enabled"></sdpi-checkbox>
     </sdpi-item>
+    <div id="normalChangeControls" hidden>
+        <sdpi-item label="Change by">
+            <sdpi-textfield id="incdecrementBy" setting="incdecrementBy" pattern="-?[0-9]+" placeholder="e.g. 1 or -1"></sdpi-textfield>
+        </sdpi-item>
+        <div id="normalChangeMessages" class="validation-message" role="alert" hidden></div>
+    </div>
+    <sdpi-item label="Hold to inc/decrement">
+        <sdpi-checkbox id="holdChangeEnabled" setting="holdChangeEnabled" label="Enabled"></sdpi-checkbox>
+    </sdpi-item>
+    <div id="holdChangeControls" hidden>
+        <sdpi-item label="Change by">
+            <sdpi-textfield id="holdChangeBy" setting="holdChangeBy" pattern="-?[0-9]+" placeholder="e.g. -1 or 3"></sdpi-textfield>
+        </sdpi-item>
+        <sdpi-item label="Hold time (ms)">
+            <sdpi-textfield id="holdChangeDuration" setting="holdChangeDuration" pattern="[1-9][0-9]*" placeholder="e.g. 400"></sdpi-textfield>
+        </sdpi-item>
+        <div id="holdChangeMessages" class="validation-message" role="alert" hidden></div>
+    </div>
+
+    <sdpi-item label="Hold to reset key">
+        <sdpi-checkbox id="longPressKeyResetEnabled" setting="longPressKeyResetEnabled" label="Enabled"></sdpi-checkbox>
+    </sdpi-item>
+    <div id="keyResetControls" hidden>
+        <sdpi-item label="Hold time (ms)">
+            <sdpi-textfield id="longPressKeyReset" setting="longPressKeyReset" pattern="[1-9][0-9]*" placeholder="e.g. 2000"></sdpi-textfield>
+        </sdpi-item>
+        <div id="keyResetMessages" class="validation-message" role="alert" hidden></div>
+    </div>
+
+    <sdpi-item label="Hold to reset group">
+        <sdpi-checkbox id="longPressGroupResetEnabled" setting="longPressGroupResetEnabled" label="Enabled"></sdpi-checkbox>
+    </sdpi-item>
+    <div id="groupResetControls" hidden>
+        <sdpi-item label="Hold time (ms)">
+            <sdpi-textfield id="longPressGroupReset" setting="longPressGroupReset" pattern="[1-9][0-9]*" placeholder="e.g. 4000"></sdpi-textfield>
+        </sdpi-item>
+        <div id="groupResetMessages" class="validation-message" role="alert" hidden></div>
+    </div>
+
+    <sdpi-item label="Write value to file">
+        <sdpi-checkbox id="writeToFileEnabled" setting="writeToFileEnabled" label="Enabled"></sdpi-checkbox>
+    </sdpi-item>
+    <div id="fileOutputControls" hidden>
+        <sdpi-item label="File path">
+            <sdpi-textfield id="filePath" setting="filePathDraft" placeholder="Full path to a .txt file"></sdpi-textfield>
+        </sdpi-item>
+        <div id="fileOutputMessages" class="validation-message" role="alert" hidden></div>
+    </div>
+
     <sdpi-item label="Sync group ID">
         <sdpi-textfield setting="syncGroupId" placeholder="e.g. sync1"></sdpi-textfield>
     </sdpi-item>
     <sdpi-item label="Reset group ID">
-        <sdpi-textfield setting="resetGroupId" placeholder="e.g. reset1"></sdpi-textfield>
+        <sdpi-textfield id="resetGroupId" setting="resetGroupId" placeholder="e.g. reset1"></sdpi-textfield>
     </sdpi-item>
-    <sdpi-item label="Hold → reset key (ms)">
-        <sdpi-textfield setting="longPressKeyReset" placeholder="Time in ms to reset this key"></sdpi-textfield>
-    </sdpi-item>
-    <sdpi-item label="Hold → reset group (ms)">
-        <sdpi-textfield setting="longPressGroupReset" placeholder="Time in ms to reset the group of keys"></sdpi-textfield>
-    </sdpi-item>
-    <sdpi-item label="Display-only">
-        <sdpi-checkbox id="displayOnly" setting="displayOnly" checked="false" placeholder="Display-only tile — value can still be updated by other counters"></sdpi-checkbox>
-    </sdpi-item>
+
     <sdpi-item label="Background color">
         <sdpi-select setting="backgroundColor" placeholder="Please choose a color">
             <option value="aquaBackground">Aqua</option>
@@ -86,34 +149,202 @@
     </sdpi-item>
     
     <script>
-        let uuid = null;
-
         document.addEventListener('DOMContentLoaded', function () {
-            $SD.on('connected', (jsonObj) => {
-                uuid = jsonObj.context;
-            });
+            const MAX_TIMER_DURATION = 2147483647;
+            const getElement = (id) => document.getElementById(id);
+            const isChecked = (id) => getElement(id).value === true;
 
-            const selectElement = document.querySelector('sdpi-select[setting="backgroundColor"]');
-            
-            selectElement.addEventListener('change', (event) => {
-                if (!uuid) return;
+            const fieldValue = (id) => String(getElement(id).value ?? '').trim();
+            const isInteger = (value) => /^-?[0-9]+$/.test(value) && Number.isSafeInteger(Number(value));
+            const isPositiveDuration = (value) =>
+                /^[1-9][0-9]*$/.test(value) && Number(value) <= MAX_TIMER_DURATION;
 
-                const newColor = event.target.value;
-                const payload = {
-                    event: "setSettings",
-                    context: uuid,
-                    payload: {
-                        backgroundColor: newColor
-                    }
-                };
-                $SD.api.send(payload);
-            });
+            const renderMessages = (id, messages) => {
+                const messageBox = getElement(id);
+                messageBox.replaceChildren();
+                messageBox.hidden = messages.length === 0;
 
-            $SD.api.getSettings();
-            $SD.on('didReceiveSettings', ({ payload }) => {
-                if (payload.settings.backgroundColor) {
-                    selectElement.value = payload.settings.backgroundColor;
+                if (messages.length === 0) return;
+
+                const list = document.createElement('ul');
+                messages.forEach((message) => {
+                    const item = document.createElement('li');
+                    item.textContent = message;
+                    list.appendChild(item);
+                });
+                messageBox.appendChild(list);
+            };
+
+            const setOptionalControlsVisibility = () => {
+                getElement('normalChangeControls').hidden = !isChecked('shortPressChangeEnabled');
+                getElement('holdChangeControls').hidden = !isChecked('holdChangeEnabled');
+                getElement('keyResetControls').hidden = !isChecked('longPressKeyResetEnabled');
+                getElement('groupResetControls').hidden = !isChecked('longPressGroupResetEnabled');
+                getElement('fileOutputControls').hidden = !isChecked('writeToFileEnabled');
+            };
+
+            const updateValidation = () => {
+                const initialValueMessages = [];
+                const normalChangeMessages = [];
+                const holdChangeMessages = [];
+                const keyResetMessages = [];
+                const groupResetMessages = [];
+                const fileOutputMessages = [];
+                const initialValue = fieldValue('initialValue');
+                const normalStep = fieldValue('incdecrementBy');
+
+                if (initialValue !== '' && !isInteger(initialValue)) {
+                    initialValueMessages.push('Use a whole number, for example 0 or -5.');
                 }
+                const normalEnabled = isChecked('shortPressChangeEnabled');
+                const holdEnabled = isChecked('holdChangeEnabled');
+                const keyResetEnabled = isChecked('longPressKeyResetEnabled');
+                const groupResetEnabled = isChecked('longPressGroupResetEnabled');
+                const fileOutputEnabled = isChecked('writeToFileEnabled');
+                const holdStep = fieldValue('holdChangeBy');
+                const holdDuration = fieldValue('holdChangeDuration');
+                const keyResetDuration = fieldValue('longPressKeyReset');
+                const groupResetDuration = fieldValue('longPressGroupReset');
+                const resetGroupId = fieldValue('resetGroupId');
+
+                if (normalEnabled && normalStep !== '' && !isInteger(normalStep)) {
+                    normalChangeMessages.push('Use a whole number, for example 1 or -2. Leave it empty to use 1.');
+                }
+                if (holdEnabled && !isInteger(holdStep)) {
+                    holdChangeMessages.push('Change by must be a whole number, for example -1 or 3.');
+                }
+                if (holdEnabled && !isPositiveDuration(holdDuration)) {
+                    holdChangeMessages.push('Hold time must be a positive whole number, for example 400 ms.');
+                }
+                if (keyResetEnabled && !isPositiveDuration(keyResetDuration)) {
+                    keyResetMessages.push('Hold time must be a positive whole number, for example 2000 ms.');
+                }
+                if (groupResetEnabled && !isPositiveDuration(groupResetDuration)) {
+                    groupResetMessages.push('Hold time must be a positive whole number, for example 4000 ms.');
+                }
+                if (groupResetEnabled && resetGroupId === '') {
+                    groupResetMessages.push('Enter a Reset group ID before enabling group reset.');
+                }
+                if (fileOutputEnabled && fieldValue('filePath') === '') {
+                    fileOutputMessages.push('Enter the full path of the output file.');
+                }
+                if (holdEnabled && isPositiveDuration(holdDuration)) {
+                    const resetDurations = [];
+                    if (keyResetEnabled && isPositiveDuration(keyResetDuration)) {
+                        resetDurations.push(Number(keyResetDuration));
+                    }
+                    if (groupResetEnabled && resetGroupId !== '' && isPositiveDuration(groupResetDuration)) {
+                        resetDurations.push(Number(groupResetDuration));
+                    }
+
+                    if (resetDurations.length > 0 && Number(holdDuration) >= Math.min(...resetDurations)) {
+                        holdChangeMessages.push('This action cannot run: its hold time must be shorter than every enabled reset hold time.');
+                    }
+                }
+
+                renderMessages('initialValueMessages', initialValueMessages);
+                renderMessages('normalChangeMessages', normalChangeMessages);
+                renderMessages('holdChangeMessages', holdChangeMessages);
+                renderMessages('keyResetMessages', keyResetMessages);
+                renderMessages('groupResetMessages', groupResetMessages);
+                renderMessages('fileOutputMessages', fileOutputMessages);
+            };
+
+            const updateOptionalSettings = () => {
+                setOptionalControlsVisibility();
+                updateValidation();
+            };
+
+            // File-output settings are sent as an in-memory draft as well as
+            // being persisted by the components. The plugin activates this
+            // draft only when the Property Inspector closes.
+            const sendFileOutputDraft = () => {
+                void SDPIComponents.streamDeckClient.send('sendToPlugin', {
+                    event: 'fileOutputDraftChanged',
+                    writeToFileEnabled: isChecked('writeToFileEnabled'),
+                    filePath: String(getElement('filePath').value ?? '')
+                }).catch(() => {
+                    // Automatic settings persistence remains a fallback if the
+                    // explicit draft message cannot be delivered.
+                });
+            };
+
+            [
+                'shortPressChangeEnabled',
+                'holdChangeEnabled',
+                'longPressKeyResetEnabled',
+                'longPressGroupResetEnabled',
+                'writeToFileEnabled'
+            ].forEach((id) => {
+                getElement(id).addEventListener('valuechange', updateOptionalSettings);
+            });
+
+            [
+                'initialValue',
+                'incdecrementBy',
+                'resetGroupId',
+                'holdChangeBy',
+                'holdChangeDuration',
+                'longPressKeyReset',
+                'longPressGroupReset',
+                'filePath'
+            ].forEach((id) => {
+                getElement(id).addEventListener('valuechange', updateValidation);
+            });
+
+            ['writeToFileEnabled', 'filePath'].forEach((id) => {
+                getElement(id).addEventListener('valuechange', sendFileOutputDraft);
+            });
+
+            updateOptionalSettings();
+
+            // Migrate only the few settings whose names or enable switches
+            // changed. Stable 1.2.2 profiles do not need to be recreated.
+            SDPIComponents.streamDeckClient.getSettings().then(({ settings }) => {
+                // Keep the path being edited separate from the last confirmed
+                // path. This also prevents a plugin restart during editing from
+                // treating a partially typed path as active.
+                if (settings.filePathDraft === undefined && settings.filePath !== undefined) {
+                    getElement('filePath').value = settings.filePath;
+                }
+
+                // Display-only used to suppress all direct count changes. Its
+                // replacement controls only the normal short-press change;
+                // hold and reset actions are now independently switchable.
+                if (typeof settings.shortPressChangeEnabled !== 'boolean') {
+                    getElement('shortPressChangeEnabled').value = settings.displayOnly !== true;
+                }
+
+                if (settings.holdChangeEnabled === undefined &&
+                    typeof settings.holdToDecrementEnabled === 'boolean') {
+                    getElement('holdChangeEnabled').value = settings.holdToDecrementEnabled;
+                }
+                if (settings.holdChangeBy === undefined && settings.holdToDecrementBy !== undefined) {
+                    getElement('holdChangeBy').value = settings.holdToDecrementBy;
+                }
+                if (settings.holdChangeDuration === undefined &&
+                    settings.holdToDecrementDuration !== undefined) {
+                    getElement('holdChangeDuration').value = settings.holdToDecrementDuration;
+                }
+
+                // Before the reset checkboxes existed, a valid duration meant
+                // that the corresponding reset was enabled.
+                if (typeof settings.longPressKeyResetEnabled !== 'boolean' &&
+                    isPositiveDuration(String(settings.longPressKeyReset ?? '').trim())) {
+                    getElement('longPressKeyResetEnabled').value = true;
+                }
+                if (typeof settings.longPressGroupResetEnabled !== 'boolean' &&
+                    isPositiveDuration(String(settings.longPressGroupReset ?? '').trim())) {
+                    getElement('longPressGroupResetEnabled').value = true;
+                }
+
+                updateOptionalSettings();
+                sendFileOutputDraft();
+            }).catch(() => {
+                // The controls still work through their own persisted settings
+                // if an explicit migration read is unavailable.
+                updateOptionalSettings();
+                sendFileOutputDraft();
             });
         });
     </script>

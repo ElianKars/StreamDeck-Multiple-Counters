@@ -1,13 +1,13 @@
 {
 	"Name": "Multiple Counters",
-	"Version": "1.2.2.0",
+	"Version": "1.3.0.0",
 	"Author": "Elian Kars",
 	"Actions": [
 		{
 			"Name": "Counter",
 			"UUID": "com.github.eliankars.multiple-counters.counter",
 			"Icon": "imgs/actions/counter/icon",
-			"Tooltip": "Displays a counter that increments by a specified value on each press.",
+			"Tooltip": "Displays a counter with configurable short-press and hold changes.",
 			"PropertyInspectorPath": "ui/counter.html",
 			"Controllers": [
 				"Keypad"
@@ -32,7 +32,6 @@
 			"States": [
 				{
 					"Image": "imgs/actions/background/blackBackground",
-					"Title": "Reset",
 					"TitleAlignment": "middle",
 					"FontSize": 12
 				}
@@ -42,7 +41,7 @@
 	"Category": "Multiple Counters",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "[1.2.2.0] A Stream Deck plugin that lets you group multiple counters and reset them all with a single button press. Perfect for stream sessions, production tracking, quality control counts, or any situation where you need to monitor and reset multiple counts together.",
+	"Description": "A flexible Stream Deck plugin for managing multiple counters. Increment, decrement, synchronize, or reset individual counters and entire groups, use configurable hold actions, and write the values to text files for use by other software. Ideal for streaming, production tracking, quality control, and more.",
 	"URL": "https://github.com/ElianKars/StreamDeck-Multiple-Counters",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 2,

@@ -1,6 +1,6 @@
-import require$$0$2 from 'stream';
-import require$$0 from 'zlib';
-import require$$0$1 from 'buffer';
+import require$$0 from 'stream';
+import require$$0$1 from 'zlib';
+import require$$0$2 from 'buffer';
 import require$$1 from 'crypto';
 import require$$0$3 from 'events';
 import require$$1$1 from 'https';
@@ -11,6 +11,7 @@ import require$$7, { fileURLToPath } from 'url';
 import path, { join } from 'node:path';
 import { cwd } from 'node:process';
 import fs, { existsSync, readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import fs$1 from 'fs';
 import path$1 from 'path';
 
@@ -103,6 +104,175 @@ var BarSubType;
 function getDefaultExportFromCjs (x) {
 	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
 }
+
+var stream;
+var hasRequiredStream;
+
+function requireStream () {
+	if (hasRequiredStream) return stream;
+	hasRequiredStream = 1;
+
+	const { Duplex } = require$$0;
+
+	/**
+	 * Emits the `'close'` event on a stream.
+	 *
+	 * @param {Duplex} stream The stream.
+	 * @private
+	 */
+	function emitClose(stream) {
+	  stream.emit('close');
+	}
+
+	/**
+	 * The listener of the `'end'` event.
+	 *
+	 * @private
+	 */
+	function duplexOnEnd() {
+	  if (!this.destroyed && this._writableState.finished) {
+	    this.destroy();
+	  }
+	}
+
+	/**
+	 * The listener of the `'error'` event.
+	 *
+	 * @param {Error} err The error
+	 * @private
+	 */
+	function duplexOnError(err) {
+	  this.removeListener('error', duplexOnError);
+	  this.destroy();
+	  if (this.listenerCount('error') === 0) {
+	    // Do not suppress the throwing behavior.
+	    this.emit('error', err);
+	  }
+	}
+
+	/**
+	 * Wraps a `WebSocket` in a duplex stream.
+	 *
+	 * @param {WebSocket} ws The `WebSocket` to wrap
+	 * @param {Object} [options] The options for the `Duplex` constructor
+	 * @return {Duplex} The duplex stream
+	 * @public
+	 */
+	function createWebSocketStream(ws, options) {
+	  let terminateOnDestroy = true;
+
+	  const duplex = new Duplex({
+	    ...options,
+	    autoDestroy: false,
+	    emitClose: false,
+	    objectMode: false,
+	    writableObjectMode: false
+	  });
+
+	  ws.on('message', function message(msg, isBinary) {
+	    const data =
+	      !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+
+	    if (!duplex.push(data)) ws.pause();
+	  });
+
+	  ws.once('error', function error(err) {
+	    if (duplex.destroyed) return;
+
+	    // Prevent `ws.terminate()` from being called by `duplex._destroy()`.
+	    //
+	    // - If the `'error'` event is emitted before the `'open'` event, then
+	    //   `ws.terminate()` is a noop as no socket is assigned.
+	    // - Otherwise, the error is re-emitted by the listener of the `'error'`
+	    //   event of the `Receiver` object. The listener already closes the
+	    //   connection by calling `ws.close()`. This allows a close frame to be
+	    //   sent to the other peer. If `ws.terminate()` is called right after this,
+	    //   then the close frame might not be sent.
+	    terminateOnDestroy = false;
+	    duplex.destroy(err);
+	  });
+
+	  ws.once('close', function close() {
+	    if (duplex.destroyed) return;
+
+	    duplex.push(null);
+	  });
+
+	  duplex._destroy = function (err, callback) {
+	    if (ws.readyState === ws.CLOSED) {
+	      callback(err);
+	      process.nextTick(emitClose, duplex);
+	      return;
+	    }
+
+	    let called = false;
+
+	    ws.once('error', function error(err) {
+	      called = true;
+	      callback(err);
+	    });
+
+	    ws.once('close', function close() {
+	      if (!called) callback(err);
+	      process.nextTick(emitClose, duplex);
+	    });
+
+	    if (terminateOnDestroy) ws.terminate();
+	  };
+
+	  duplex._final = function (callback) {
+	    if (ws.readyState === ws.CONNECTING) {
+	      ws.once('open', function open() {
+	        duplex._final(callback);
+	      });
+	      return;
+	    }
+
+	    // If the value of the `_socket` property is `null` it means that `ws` is a
+	    // client websocket and the handshake failed. In fact, when this happens, a
+	    // socket is never assigned to the websocket. Wait for the `'error'` event
+	    // that will be emitted by the websocket.
+	    if (ws._socket === null) return;
+
+	    if (ws._socket._writableState.finished) {
+	      callback();
+	      if (duplex._readableState.endEmitted) duplex.destroy();
+	    } else {
+	      ws._socket.once('finish', function finish() {
+	        // `duplex` is not destroyed here because the `'end'` event will be
+	        // emitted on `duplex` after this `'finish'` event. The EOF signaling
+	        // `null` chunk is, in fact, pushed when the websocket emits `'close'`.
+	        callback();
+	      });
+	      ws.close();
+	    }
+	  };
+
+	  duplex._read = function () {
+	    if (ws.isPaused) ws.resume();
+	  };
+
+	  duplex._write = function (chunk, encoding, callback) {
+	    if (ws.readyState === ws.CONNECTING) {
+	      ws.once('open', function open() {
+	        duplex._write(chunk, encoding, callback);
+	      });
+	      return;
+	    }
+
+	    ws.send(chunk, callback);
+	  };
+
+	  duplex.on('end', duplexOnEnd);
+	  duplex.on('error', duplexOnError);
+	  return duplex;
+	}
+
+	stream = createWebSocketStream;
+	return stream;
+}
+
+requireStream();
 
 var bufferUtil = {exports: {}};
 
@@ -340,7 +510,7 @@ function requirePermessageDeflate () {
 	if (hasRequiredPermessageDeflate) return permessageDeflate;
 	hasRequiredPermessageDeflate = 1;
 
-	const zlib = require$$0;
+	const zlib = require$$0$1;
 
 	const bufferUtil = requireBufferUtil();
 	const Limiter = requireLimiter();
@@ -863,7 +1033,7 @@ function requireValidation () {
 	if (hasRequiredValidation) return validation.exports;
 	hasRequiredValidation = 1;
 
-	const { isUtf8 } = require$$0$1;
+	const { isUtf8 } = require$$0$2;
 
 	const { hasBlob } = requireConstants();
 
@@ -1023,7 +1193,7 @@ function requireReceiver () {
 	if (hasRequiredReceiver) return receiver;
 	hasRequiredReceiver = 1;
 
-	const { Writable } = require$$0$2;
+	const { Writable } = require$$0;
 
 	const PerMessageDeflate = requirePermessageDeflate();
 	const {
@@ -1740,6 +1910,8 @@ var hasRequiredSender;
 function requireSender () {
 	if (hasRequiredSender) return sender;
 	hasRequiredSender = 1;
+
+	const { Duplex } = require$$0;
 	const { randomFillSync } = require$$1;
 
 	const PerMessageDeflate = requirePermessageDeflate();
@@ -2868,6 +3040,7 @@ function requireWebsocket () {
 	const net = require$$3;
 	const tls = require$$4;
 	const { randomBytes, createHash } = require$$1;
+	const { Duplex, Readable } = require$$0;
 	const { URL } = require$$7;
 
 	const PerMessageDeflate = requirePermessageDeflate();
@@ -4332,6 +4505,7 @@ function requireWebsocketServer () {
 
 	const EventEmitter = require$$0$3;
 	const http = require$$2;
+	const { Duplex } = require$$0;
 	const { createHash } = require$$1;
 
 	const extension = requireExtension();
@@ -7908,7 +8082,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 function __esDecorate(ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
-    function accept(f) { if (f !== undefined && typeof f !== "function") throw new TypeError("Function expected"); return f; }
+    function accept(f) { if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected"); return f; }
     var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
     var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
     var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
@@ -7920,7 +8094,7 @@ function __esDecorate(ctor, descriptorIn, decorators, contextIn, initializers, e
         context.addInitializer = function (f) { if (done) throw new TypeError("Cannot add initializers after decoration has completed"); extraInitializers.push(accept(f || null)); };
         var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context);
         if (kind === "accessor") {
-            if (result === undefined) continue;
+            if (result === void 0) continue;
             if (result === null || typeof result !== "object") throw new TypeError("Object expected");
             if (_ = accept(result.get)) descriptor.get = _;
             if (_ = accept(result.set)) descriptor.set = _;
@@ -7939,7 +8113,7 @@ function __runInitializers(thisArg, initializers, value) {
     for (var i = 0; i < initializers.length; i++) {
         value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
     }
-    return useValue ? value : undefined;
+    return useValue ? value : void 0;
 }
 typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
     var e = new Error(message);
@@ -7947,96 +8121,257 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
 };
 
 // Shared state to keep track of all counters.
-const incrementActionIds = new Set();
+const counterActionIds = new Set();
 const backgroundColorPath = "imgs/actions/background/";
-const confirmedByContext = new Map(); // For reset action confirmation
-// Tracks the current press state for each action instance (key). 
-// For every pressed key we store:
-// - the optional timer for key reset
-// - the optional timer for group reset
-// - whether the key-reset threshold has already fired
-// - whether the group-reset threshold has already fired
-// This allows both long-press actions to occur during the same press, 
-// while still preventing the normal short-press increment on key release.
+const maxTimerDuration = 2_147_483_647;
+const confirmedByContext = new Map();
 const pressStates = new Map();
-/**
- * Sets the title of the action button.
- * @param action - The action instance.
- * @param prefixTitle - Optional prefix for the title.
- * @param count - The current count value.
- * @returns A promise that resolves when the title is set.
- */
+const counterFileWrites = new Map();
+const counterFileWriteErrors = new Map();
+const activeFileOutputConfigurations = new Map();
+const fileOutputDrafts = new Map();
+const openPropertyInspectors = new Set();
+/** Sets the title of an action button. */
 function setActionTitle(action, prefixTitle, count) {
     const title = prefixTitle ? `${prefixTitle}\n${count}` : `${count}`;
     return action.setTitle(title);
 }
-/**
- * Sets the image of the action button.
- * @param action - The action instance.
- * @param backgroundColor - The background color for the action.
- * @returns A promise that resolves when the image is set.
- */
+/** Sets the image of an action button. */
 function setActionImage(action, backgroundColor) {
     if (backgroundColor) {
         return action.setImage(`${backgroundColorPath}${backgroundColor}`);
     }
     return Promise.resolve();
 }
-/**
- * Checks if a value is a valid positive integer.
- * @param v - The value to check.
- * @returns The value if it is a valid positive integer, otherwise undefined.
- */
-function toPositiveInt(v) {
-    if (typeof v === "number" && Number.isInteger(v) && v > 0)
-        return v;
-    if (typeof v === "string" && /^\d+$/.test(v.trim()))
-        return Number(v.trim());
-    return undefined; // anything else → not a valid hold time
+/** Parses a positive integer used as a hold duration. */
+function toPositiveInt(value) {
+    const parsed = toOptionalInt(value);
+    return parsed !== undefined && parsed > 0 && parsed <= maxTimerDuration
+        ? parsed
+        : undefined;
 }
-/**
- * Converts a value to an integer, returning a fallback value if the conversion fails.
- * @param value - The value to convert.
- * @param fallback - The fallback value to return if the conversion fails.
- * @returns The converted integer or the fallback value.
- */
+/** Parses an integer without treating an empty string as zero. */
+function toOptionalInt(value) {
+    if (typeof value === "number") {
+        return Number.isSafeInteger(value) ? value : undefined;
+    }
+    if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+        const parsed = Number(value.trim());
+        return Number.isSafeInteger(parsed) ? parsed : undefined;
+    }
+    return undefined;
+}
+/** Converts a value to an integer, returning a fallback if parsing fails. */
 function toInt(value, fallback = 0) {
-    const n = Number(value);
-    return Number.isInteger(n) ? n : fallback;
+    return toOptionalInt(value) ?? fallback;
+}
+/** Reads the new short-press setting, with the pre-update key as fallback. */
+function getShortPressChangeBy(settings) {
+    const configuredValue = settings.shortPressChangeBy !== undefined
+        ? settings.shortPressChangeBy
+        : settings.incdecrementBy;
+    return toInt(configuredValue, 1);
 }
 /**
- * Logs the action details.
- * @param event - The event instance.
- * @param settings - The settings of the action.
- * @param actionType - The type of action being logged.
+ * Existing profiles used Display-only to suppress normal key presses. Treat
+ * that legacy setting as the inverse of the new short-press switch until the
+ * Property Inspector has persisted the replacement setting.
  */
+function isShortPressChangeEnabled(settings) {
+    if (typeof settings.shortPressChangeEnabled === "boolean") {
+        return settings.shortPressChangeEnabled;
+    }
+    return settings.displayOnly !== true;
+}
+/** Reads hold-change settings, including the names used by a pre-release build. */
+function isHoldChangeEnabled(settings) {
+    if (typeof settings.holdChangeEnabled === "boolean") {
+        return settings.holdChangeEnabled;
+    }
+    return settings.holdToDecrementEnabled === true;
+}
+function getHoldChangeBy(settings) {
+    return settings.holdChangeBy !== undefined
+        ? settings.holdChangeBy
+        : settings.holdToDecrementBy;
+}
+function getHoldChangeDuration(settings) {
+    return settings.holdChangeDuration !== undefined
+        ? settings.holdChangeDuration
+        : settings.holdToDecrementDuration;
+}
+/**
+ * Old profiles only stored a reset duration. If the new enabled setting is
+ * absent, a valid legacy duration still enables that reset.
+ */
+function isResetEnabled(enabled, duration) {
+    return typeof enabled === "boolean" ? enabled : toPositiveInt(duration) !== undefined;
+}
+/** Writes one counter value, serializing writes per action to preserve order. */
+async function writeCounterValue(actionId, configuration, count) {
+    if (!configuration.enabled)
+        return;
+    const outputPath = configuration.path;
+    if (outputPath === "")
+        return;
+    const previousWrite = counterFileWrites.get(actionId) ?? Promise.resolve();
+    const currentWrite = previousWrite.then(async () => {
+        try {
+            await writeFile(outputPath, String(count), "utf8");
+            counterFileWriteErrors.delete(actionId);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const errorKey = `${outputPath}\0${message}`;
+            // Keep a persistent path problem visible without repeating the same
+            // error after every counter update. A successful write clears it.
+            if (counterFileWriteErrors.get(actionId) !== errorKey) {
+                counterFileWriteErrors.set(actionId, errorKey);
+                streamDeck.logger.error(`Unable to write counter value for action=${actionId} to ${JSON.stringify(outputPath)}: ${message}`);
+            }
+        }
+    });
+    counterFileWrites.set(actionId, currentWrite);
+    await currentWrite;
+    if (counterFileWrites.get(actionId) === currentWrite) {
+        counterFileWrites.delete(actionId);
+    }
+}
+function getFileOutputConfiguration(settings) {
+    const outputPath = typeof settings.filePath === "string" ? settings.filePath.trim() : "";
+    return {
+        enabled: settings.writeToFileEnabled === true,
+        path: outputPath,
+    };
+}
+function getFileOutputDraftConfiguration(settings) {
+    const draftPath = typeof settings.filePathDraft === "string"
+        ? settings.filePathDraft.trim()
+        : getFileOutputConfiguration(settings).path;
+    return {
+        enabled: settings.writeToFileEnabled === true,
+        path: draftPath,
+    };
+}
+function hasSameFileOutputConfiguration(first, second) {
+    return first?.enabled === second.enabled && first.path === second.path;
+}
+/**
+ * Activates file-output settings and writes once when that configuration
+ * changed. While the Property Inspector is open, its draft is deliberately not
+ * activated so partial paths can never receive counter output.
+ */
+async function activateFileOutputConfiguration(action, configuration, count) {
+    const actionId = action.id;
+    const previousConfiguration = activeFileOutputConfigurations.get(actionId);
+    if (hasSameFileOutputConfiguration(previousConfiguration, configuration))
+        return;
+    activeFileOutputConfigurations.set(actionId, configuration);
+    counterFileWriteErrors.delete(actionId);
+    await writeCounterValue(actionId, configuration, count);
+}
+/** Persists and displays one counter value, including optional file output. */
+async function setCounterValue(action, settings, count, updateImage = false) {
+    settings.count = count;
+    await action.setSettings(settings);
+    if (updateImage)
+        await setActionImage(action, settings.backgroundColor);
+    await setActionTitle(action, settings.prefixTitle, count);
+    const configuration = activeFileOutputConfigurations.get(action.id) ?? getFileOutputConfiguration(settings);
+    activeFileOutputConfigurations.set(action.id, configuration);
+    void writeCounterValue(action.id, configuration, count);
+}
+/** Applies a delta to one counter and every counter in its sync group. */
+async function changeCounterAndSync(action, settings, step) {
+    const syncGroup = (settings.syncGroupId ?? "").trim();
+    const current = toInt(settings.count, toInt(settings.initialValue, 0));
+    await setCounterValue(action, settings, current + step, true);
+    const syncPromises = Array.from(counterActionIds).map(async (id) => {
+        if (id === action.id)
+            return;
+        const otherAction = streamDeck.actions.getActionById(id);
+        if (!otherAction || !otherAction.isKey()) {
+            counterActionIds.delete(id);
+            pressStates.delete(id);
+            return;
+        }
+        const otherSettings = await otherAction.getSettings();
+        if (syncGroup !== "" && (otherSettings.syncGroupId ?? "").trim() === syncGroup) {
+            const otherCurrent = toInt(otherSettings.count, toInt(otherSettings.initialValue, 0));
+            await setCounterValue(otherAction, otherSettings, otherCurrent + step);
+        }
+    });
+    await Promise.all(syncPromises);
+}
+/** Clears timers that have not fired yet for a press. */
+function clearPressTimers(state) {
+    if (state?.keyTimer)
+        clearTimeout(state.keyTimer);
+    if (state?.groupTimer)
+        clearTimeout(state.groupTimer);
+    if (state) {
+        state.keyTimer = undefined;
+        state.groupTimer = undefined;
+    }
+}
+/** Runs the per-key reset once for a press. */
+function triggerKeyReset(ctx, state, action) {
+    if (state.keyTriggered)
+        return state.keyResetPromise ?? Promise.resolve();
+    state.keyTriggered = true;
+    state.keyResetPromise = (async () => {
+        try {
+            const settings = (await action.getSettings());
+            const resetValue = toInt(settings.initialValue, 0);
+            await setCounterValue(action, settings, resetValue);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            streamDeck.logger.error(`Unable to reset counter action=${ctx}: ${message}`);
+        }
+    })();
+    return state.keyResetPromise;
+}
+/** Runs the reset-group action once for a press. */
+function triggerGroupReset(ctx, state) {
+    if (state.groupTriggered)
+        return state.groupResetPromise ?? Promise.resolve();
+    state.groupTriggered = true;
+    state.groupResetPromise = (async () => {
+        try {
+            await resetGroupById(state.resetGroupId);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            streamDeck.logger.error(`Unable to reset group ${JSON.stringify(state.resetGroupId)} from action=${ctx}: ${message}`);
+        }
+    })();
+    return state.groupResetPromise;
+}
+/** Logs action details at trace level. */
 function logActionDetails(event, settings, actionType) {
     const payload = event.payload ?? {};
-    // Is in multi-action?
     const inMultiAction = payload.isInMultiAction === true;
-    // Coordinates only available in top-level actions
     const coords = payload.coordinates;
-    // Position tag: "[col,row]" for normal keys, "[MA]" for Multi-Action children, "[–]" when no position data
-    const pos = coords
-        ? `[${coords.column},${coords.row}]` // bv. [2,0]
-        : inMultiAction
-            ? "[MA]" // Multi Action-child
-            : "[–]"; // Inspector-/global event
-    // Log other metadata
-    const { prefixTitle, count, resetGroupId, syncGroupId, displayOnly, incdecrementBy, longPressKeyReset, longPressGroupReset } = settings ?? {};
+    const pos = coords ? `[${coords.column},${coords.row}]` : inMultiAction ? "[MA]" : "[–]";
+    const { prefixTitle, count, resetGroupId, syncGroupId, shortPressChangeBy, longPressKeyResetEnabled, longPressKeyReset, longPressGroupResetEnabled, longPressGroupReset, writeToFileEnabled, } = settings ?? {};
+    const configuredShortPressChangeBy = shortPressChangeBy ?? settings?.incdecrementBy ?? 1;
+    const shortPressChangeEnabled = isShortPressChangeEnabled(settings ?? {});
+    const holdChangeEnabled = isHoldChangeEnabled(settings ?? {});
+    const holdChangeBy = getHoldChangeBy(settings ?? {});
+    const holdChangeDuration = getHoldChangeDuration(settings ?? {});
     const uuid = event.actionUUID ?? event.context ?? "unknown";
     streamDeck.logger.trace(`Action: ${actionType}, UUID: ${uuid}, Pos: ${pos}, ` +
         `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
         `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}, ` +
-        `DispOnly: ${displayOnly === true ? 1 : 0}, Step: ${incdecrementBy ?? 1}, ` +
-        `LPkey: ${longPressKeyReset}, ` +
-        `LPgrp: ${longPressGroupReset}`);
+        `ShortChange: ${shortPressChangeEnabled ? 1 : 0}/${configuredShortPressChangeBy}, ` +
+        `HoldChange: ${holdChangeEnabled === true ? 1 : 0}/${holdChangeBy ?? ""}/${holdChangeDuration ?? ""}, ` +
+        `LPkey: ${longPressKeyResetEnabled ?? "legacy"}/${longPressKeyReset ?? ""}, ` +
+        `LPgrp: ${longPressGroupResetEnabled ?? "legacy"}/${longPressGroupReset ?? ""}, ` +
+        `File: ${writeToFileEnabled === true ? 1 : 0}`);
 }
-/**
- * Increment Counter Action
- * Each counter has a unique UUID and uses separate settings.
- */
-let IncrementCounter = (() => {
+/** Counter Action. Each counter has separate persisted settings. */
+let CounterAction = (() => {
     let _classDecorators = [action({ UUID: "com.github.eliankars.multiple-counters.counter" })];
     let _classDescriptor;
     let _classExtraInitializers = [];
@@ -8045,173 +8380,189 @@ let IncrementCounter = (() => {
     (class extends _classSuper {
         static { _classThis = this; }
         static {
-            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : undefined;
+            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
             __esDecorate(null, _classDescriptor = { value: _classThis }, _classDecorators, { kind: "class", name: _classThis.name, metadata: _metadata }, null, _classExtraInitializers);
             _classThis = _classDescriptor.value;
             if (_metadata) Object.defineProperty(_classThis, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
             __runInitializers(_classThis, _classExtraInitializers);
         }
-        /**
-         * Called when the action appears on the Stream Deck.
-         */
         async onWillAppear(ev) {
             const settings = (ev.payload.settings ?? {});
-            const uniqueActionId = ev.action.id ?? settings.uniqueActionId;
             const initialValue = toInt(settings.initialValue, 0);
-            const count = settings.count ?? initialValue; // Initialize count with initialValue: if provided, otherwise default to 0
-            settings.count = count;
-            incrementActionIds.add(uniqueActionId);
-            logActionDetails(ev, settings, "IncrementCounter.onWillAppear");
-            // Update the title and image of the button
-            setActionImage(ev.action, settings.backgroundColor);
-            await setActionTitle(ev.action, settings.prefixTitle ?? "", count);
-            await ev.action.setSettings(settings);
+            const count = toInt(settings.count, initialValue);
+            counterActionIds.add(ev.action.id);
+            activeFileOutputConfigurations.set(ev.action.id, getFileOutputConfiguration(settings));
+            logActionDetails(ev, settings, "CounterAction.onWillAppear");
+            await setActionImage(ev.action, settings.backgroundColor);
+            await setCounterValue(ev.action, settings, count);
         }
-        /**
-         * Called when the action disappears from the Stream Deck.
-         */
         async onWillDisappear(ev) {
             const id = ev.action.id;
             if (!id)
                 return;
-            incrementActionIds.delete(id);
-            // Opruimen van eventuele lopende press-state
+            counterActionIds.delete(id);
+            activeFileOutputConfigurations.delete(id);
+            fileOutputDrafts.delete(id);
+            openPropertyInspectors.delete(id);
+            counterFileWriteErrors.delete(id);
             const state = pressStates.get(id);
-            if (state?.keyTimer)
-                clearTimeout(state.keyTimer);
-            if (state?.groupTimer)
-                clearTimeout(state.groupTimer);
-            if (state)
+            clearPressTimers(state);
+            if (state) {
                 streamDeck.logger.trace(`Cleaning press state on disappear for action=${id}`);
+            }
             pressStates.delete(id);
-            logActionDetails(ev, ev.payload.settings ?? {}, "IncrementCounter.onWillDisappear");
+            logActionDetails(ev, ev.payload.settings ?? {}, "CounterAction.onWillDisappear");
         }
-        /**
-        * Called when the action's key is pressed.
-        * Starts up to two independent long-press timers for this key:
-        * - one for resetting only this counter
-        * - one for resetting all counters in the same resetGroupId
-        *
-        * Both timers are allowed to fire during the same press.
-        * Example:
-        * - after 2000 ms → reset only this key
-        * - after 3000 ms → reset the whole group
-        *
-        * If the key is released before either threshold is reached,
-        * onKeyUp() will treat it as a normal short press and increment the counter.
-        */
+        /** Starts the two independent reset timers and records the press timestamp. */
         async onKeyDown(ev) {
             const ctx = ev.action.id;
             const settings = (ev.payload.settings ?? {});
-            // Clean up any old press state for this key before starting a new press cycle.
-            const old = pressStates.get(ctx);
-            if (old?.keyTimer)
-                clearTimeout(old.keyTimer);
-            if (old?.groupTimer)
-                clearTimeout(old.groupTimer);
+            clearPressTimers(pressStates.get(ctx));
+            const resetGroupId = (settings.resetGroupId ?? "").trim();
+            const keyResetMs = isResetEnabled(settings.longPressKeyResetEnabled, settings.longPressKeyReset)
+                ? toPositiveInt(settings.longPressKeyReset)
+                : undefined;
+            const groupResetMs = isResetEnabled(settings.longPressGroupResetEnabled, settings.longPressGroupReset) &&
+                resetGroupId !== ""
+                ? toPositiveInt(settings.longPressGroupReset)
+                : undefined;
+            const holdChangeEnabled = isHoldChangeEnabled(settings);
+            const holdChangeMs = holdChangeEnabled
+                ? toPositiveInt(getHoldChangeDuration(settings))
+                : undefined;
             const state = {
+                pressedAt: Date.now(),
+                holdChangeMs,
+                holdChangeBy: holdChangeEnabled
+                    ? toOptionalInt(getHoldChangeBy(settings))
+                    : undefined,
+                keyResetMs,
+                groupResetMs,
+                resetGroupId,
                 keyTriggered: false,
                 groupTriggered: false,
             };
-            // 1) Key-reset timer.
-            // Fires once the longPressKeyReset threshold is reached and resets only this counter.
-            const keyMs = toPositiveInt(settings.longPressKeyReset);
-            if (keyMs) {
-                state.keyTimer = setTimeout(async () => {
-                    // Mark that the key-reset threshold has fired during this press.
-                    state.keyTriggered = true;
-                    pressStates.set(ctx, state);
-                    const cur = await ev.action.getSettings();
-                    const resetValue = toInt(cur.initialValue, 0);
-                    cur.count = resetValue;
-                    await ev.action.setSettings(cur);
-                    await setActionTitle(ev.action, cur.prefixTitle, resetValue);
-                }, keyMs);
+            if (keyResetMs !== undefined) {
+                state.keyTimer = setTimeout(() => {
+                    state.keyTimer = undefined;
+                    void triggerKeyReset(ctx, state, ev.action);
+                }, keyResetMs);
             }
-            // 2) Group-reset timer.
-            // Fires once the longPressGroupReset threshold is reached and resets all counters
-            // that belong to the same resetGroupId.
-            const groupMs = toPositiveInt(settings.longPressGroupReset);
-            const resetGroupId = (settings.resetGroupId ?? "").trim();
-            if (groupMs && resetGroupId !== "") {
-                state.groupTimer = setTimeout(async () => {
-                    // Mark that the group-reset threshold has fired during this press.
-                    state.groupTriggered = true;
-                    pressStates.set(ctx, state);
-                    await resetGroupById(resetGroupId);
-                }, groupMs);
+            if (groupResetMs !== undefined) {
+                state.groupTimer = setTimeout(() => {
+                    state.groupTimer = undefined;
+                    void triggerGroupReset(ctx, state);
+                }, groupResetMs);
             }
-            // Store the active press state for this key so onKeyUp() can inspect it later.
             pressStates.set(ctx, state);
-            logActionDetails(ev, settings, "IncrementCounter.onKeyDown");
+            logActionDetails(ev, settings, "CounterAction.onKeyDown");
         }
-        /**
-         * Called when the action's key is released.
-         */
+        /** Selects resets first, then exactly one count action, based on total duration. */
         async onKeyUp(ev) {
             const ctx = ev.action.id;
             const state = pressStates.get(ctx);
-            // 1) Stop any timers that are still pending for this press.
-            // If a threshold has not been reached yet, releasing the key should prevent it from firing later.
-            if (state?.keyTimer)
-                clearTimeout(state.keyTimer);
-            if (state?.groupTimer)
-                clearTimeout(state.groupTimer);
-            // 2) If one or both long-press actions already fired while the key was still down,
-            // this press must NOT perform the normal short-press increment on release.
-            if (state?.keyTriggered || state?.groupTriggered) {
-                streamDeck.logger.trace(`Short press skipped after long press: ctx=${ctx}, keyTriggered=${state?.keyTriggered ? 1 : 0}, groupTriggered=${state?.groupTriggered ? 1 : 0}`);
-                pressStates.delete(ctx);
-                return;
-            }
-            // 3) No long-press threshold fired → this was a normal short press.
-            // Remove the stored press state and perform the usual increment action.
-            pressStates.delete(ctx);
-            // Always read the latest settings here.
-            // The count may have changed while the key was held down
-            // (for example due to a reset or sync update from another action).
-            const settings = await ev.action.getSettings();
-            const syncGroup = (settings.syncGroupId ?? "").trim();
-            // Only increment if not display-only, display-only counters can still be updated 
-            // by other counters but won't increment themselves on key press
-            if (!settings.displayOnly) {
-                const step = toInt(settings.incdecrementBy, 1);
-                const current = toInt(settings.count, toInt(settings.initialValue, 0));
-                settings.incdecrementBy = step;
-                settings.count = current + step;
-                await setActionImage(ev.action, settings.backgroundColor);
-                await ev.action.setSettings(settings);
-                await setActionTitle(ev.action, settings.prefixTitle, settings.count);
-                const syncPromises = Array.from(incrementActionIds).map(async (id) => {
-                    if (id === ev.action.id)
-                        return;
-                    const a = streamDeck.actions.getActionById(id);
-                    if (!a) {
-                        incrementActionIds.delete(id);
-                        pressStates.delete(id);
+            clearPressTimers(state);
+            const pressDuration = state ? Math.max(0, Date.now() - state.pressedAt) : 0;
+            try {
+                if (state) {
+                    // Catch up reset callbacks that were due but had not run yet because of
+                    // event-loop scheduling. Each trigger function is idempotent per press.
+                    if (state.keyResetMs !== undefined && pressDuration >= state.keyResetMs) {
+                        await triggerKeyReset(ctx, state, ev.action);
+                    }
+                    else if (state.keyResetPromise) {
+                        await state.keyResetPromise;
+                    }
+                    if (state.groupResetMs !== undefined && pressDuration >= state.groupResetMs) {
+                        await triggerGroupReset(ctx, state);
+                    }
+                    else if (state.groupResetPromise) {
+                        await state.groupResetPromise;
+                    }
+                    if (state.keyTriggered || state.groupTriggered) {
+                        streamDeck.logger.trace(`Count change skipped after reset: ctx=${ctx}, duration=${pressDuration}, ` +
+                            `keyTriggered=${state.keyTriggered ? 1 : 0}, groupTriggered=${state.groupTriggered ? 1 : 0}`);
                         return;
                     }
-                    const s = await a.getSettings();
-                    if ((s.syncGroupId ?? "").trim() === syncGroup && syncGroup !== "") {
-                        const otherCurrent = toInt(s.count, toInt(s.initialValue, 0));
-                        s.count = otherCurrent + step;
-                        await a.setSettings(s);
-                        await setActionTitle(a, s.prefixTitle, s.count);
-                    }
-                });
-                await Promise.all(syncPromises);
+                }
+                // Read the latest value in case this counter changed while the key was held.
+                const settings = await ev.action.getSettings();
+                const useHoldChange = state?.holdChangeMs !== undefined && pressDuration >= state.holdChangeMs;
+                if (useHoldChange && state.holdChangeBy === undefined) {
+                    streamDeck.logger.warn(`Hold change skipped because Change by is not a valid integer: action=${ctx}`);
+                }
+                else if (useHoldChange) {
+                    await changeCounterAndSync(ev.action, settings, state.holdChangeBy);
+                }
+                else if (isShortPressChangeEnabled(settings)) {
+                    await changeCounterAndSync(ev.action, settings, getShortPressChangeBy(settings));
+                }
+                logActionDetails(ev, settings, "CounterAction.onKeyUp");
             }
-            logActionDetails(ev, settings, "IncrementCounter.onKeyUp");
+            finally {
+                // Do not delete a newer press if another keyDown arrived while async work
+                // for this release was still completing.
+                if (!state || pressStates.get(ctx) === state) {
+                    pressStates.delete(ctx);
+                }
+            }
         }
-        /**
-         * Called when the action receives new settings.
-         */
         async onDidReceiveSettings(ev) {
             const settings = ev.payload.settings ?? {};
             const count = toInt(settings.count, toInt(settings.initialValue, 0));
             await setActionImage(ev.action, settings.backgroundColor);
             await setActionTitle(ev.action, settings.prefixTitle, count);
-            logActionDetails(ev, settings, "IncrementCounter.onDidReceiveSettings");
+            // sdpi-components persists text fields while the user types. Keep those
+            // settings as a draft until the Property Inspector closes, so neither a
+            // pause nor a counter press can activate an incomplete path.
+            if (!openPropertyInspectors.has(ev.action.id)) {
+                await activateFileOutputConfiguration(ev.action, getFileOutputConfiguration(settings), count);
+            }
+            logActionDetails(ev, settings, "CounterAction.onDidReceiveSettings");
+        }
+        async onPropertyInspectorDidAppear(ev) {
+            openPropertyInspectors.add(ev.action.id);
+            fileOutputDrafts.delete(ev.action.id);
+            if (!activeFileOutputConfigurations.has(ev.action.id)) {
+                const settings = await ev.action.getSettings();
+                activeFileOutputConfigurations.set(ev.action.id, getFileOutputConfiguration(settings));
+            }
+        }
+        onSendToPlugin(ev) {
+            if (ev.payload?.event !== "fileOutputDraftChanged" ||
+                typeof ev.payload.writeToFileEnabled !== "boolean" ||
+                typeof ev.payload.filePath !== "string") {
+                return;
+            }
+            fileOutputDrafts.set(ev.action.id, {
+                enabled: ev.payload.writeToFileEnabled,
+                path: ev.payload.filePath.trim(),
+            });
+        }
+        async onPropertyInspectorDidDisappear(ev) {
+            const actionId = ev.action.id;
+            try {
+                if (!counterActionIds.has(actionId))
+                    return;
+                const settings = await ev.action.getSettings();
+                const configuration = fileOutputDrafts.get(actionId) ?? getFileOutputDraftConfiguration(settings);
+                // The explicit draft message is sent immediately for each field change,
+                // while the component's automatic settings update may still be queued as
+                // the inspector closes. Persist the final draft before activating it.
+                settings.writeToFileEnabled = configuration.enabled;
+                settings.filePath = configuration.path;
+                await ev.action.setSettings(settings);
+                const count = toInt(settings.count, toInt(settings.initialValue, 0));
+                await activateFileOutputConfiguration(ev.action, configuration, count);
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                streamDeck.logger.error(`Unable to apply counter file output after closing the Property Inspector for action=${actionId}: ${message}`);
+            }
+            finally {
+                fileOutputDrafts.delete(actionId);
+                openPropertyInspectors.delete(actionId);
+            }
         }
     });
     return _classThis;
@@ -8225,15 +8576,12 @@ let ResetCounters = (() => {
     (class extends _classSuper {
         static { _classThis = this; }
         static {
-            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : undefined;
+            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
             __esDecorate(null, _classDescriptor = { value: _classThis }, _classDecorators, { kind: "class", name: _classThis.name, metadata: _metadata }, null, _classExtraInitializers);
             _classThis = _classDescriptor.value;
             if (_metadata) Object.defineProperty(_classThis, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
             __runInitializers(_classThis, _classExtraInitializers);
         }
-        /**
-         * Called when the action appears on the Stream Deck.
-         */
         onWillAppear(ev) {
             const settings = ev.payload.settings ?? {};
             const idleTitle = settings.idleTitle ?? "";
@@ -8241,9 +8589,6 @@ let ResetCounters = (() => {
             ev.action.setTitle(idleTitle);
             logActionDetails(ev, settings, "ResetCounters.onWillAppear");
         }
-        /**
-         * Called when the action disappears from the Stream Deck.
-         */
         async onWillDisappear(ev) {
             const ctx = ev.action.id;
             if (!ctx)
@@ -8255,19 +8600,14 @@ let ResetCounters = (() => {
                 confirmedByContext.delete(ctx);
             }
         }
-        /**
-         * Called when the action's key is pressed.
-         */
         async onKeyDown(ev) {
             const settings = ev.payload.settings ?? {};
             const ctx = ev.action.id;
             const confirmReset = settings.confirmReset ?? false;
             const confirmResetWaitTime = toPositiveInt(settings.confirmTimeout) ?? 5000;
-            // Check if the the user wants to confirm the reset first else perform the reset action immediately
             if (confirmReset) {
                 const existing = confirmedByContext.get(ctx);
                 if (!existing) {
-                    // First press: ask for confirmation
                     await ev.action.setTitle(settings.confirmTitle);
                     await setActionImage(ev.action, settings.confirmBackgroundColor);
                     const timeout = setTimeout(() => {
@@ -8279,24 +8619,18 @@ let ResetCounters = (() => {
                     streamDeck.logger.trace(`Reset confirm started: ctx=${ctx}, group=${settings.resetGroupId ?? ""}, timeout=${confirmResetWaitTime}`);
                     return;
                 }
-                else {
-                    clearTimeout(existing);
-                    confirmedByContext.delete(ctx);
-                    await ev.action.setTitle(settings.idleTitle);
-                    await setActionImage(ev.action, settings.backgroundColor);
-                    streamDeck.logger.trace(`Reset confirm expired: ctx=${ctx}, group=${settings.resetGroupId ?? ""}`);
-                }
+                clearTimeout(existing);
+                confirmedByContext.delete(ctx);
+                await ev.action.setTitle(settings.idleTitle);
+                await setActionImage(ev.action, settings.backgroundColor);
+                streamDeck.logger.trace(`Reset confirmed: ctx=${ctx}, group=${settings.resetGroupId ?? ""}`);
             }
-            // Perform the reset, reset all counters with the same resetGroupId to 0
             const resetGroupId = (settings.resetGroupId ?? "").trim();
             if (resetGroupId !== "") {
                 await resetGroupById(resetGroupId);
             }
             logActionDetails(ev, settings, "ResetCounters.onKeyDown");
         }
-        /**
-         * Called when the action receives new settings.
-         */
         async onDidReceiveSettings(ev) {
             const settings = ev.payload.settings ?? {};
             const idleTitle = settings.idleTitle ?? "";
@@ -8307,24 +8641,19 @@ let ResetCounters = (() => {
     });
     return _classThis;
 })();
-/**
- * Resets all counters with the specified group ID to zero.
- */
+/** Resets all counters with the specified group ID to their own initial value. */
 async function resetGroupById(groupId) {
-    const resetPromises = Array.from(incrementActionIds).map(async (otherId) => {
-        const a = streamDeck.actions.getActionById(otherId);
-        // If the action no longer exists, clean up its ID from our shared state and skip it.
-        if (!a) {
-            incrementActionIds.delete(otherId);
+    const resetPromises = Array.from(counterActionIds).map(async (otherId) => {
+        const action = streamDeck.actions.getActionById(otherId);
+        if (!action || !action.isKey()) {
+            counterActionIds.delete(otherId);
             pressStates.delete(otherId);
             return;
         }
-        const os = await a.getSettings();
-        if ((os.resetGroupId ?? "").trim() === groupId) {
-            const resetValue = toInt(os.initialValue, 0);
-            os.count = resetValue;
-            await a.setSettings(os);
-            await setActionTitle(a, os.prefixTitle, resetValue);
+        const settings = await action.getSettings();
+        if ((settings.resetGroupId ?? "").trim() === groupId) {
+            const resetValue = toInt(settings.initialValue, 0);
+            await setCounterValue(action, settings, resetValue);
         }
     });
     await Promise.all(resetPromises);
@@ -8353,7 +8682,7 @@ const logLevel = getLogLevel();
 streamDeck.logger.setLevel(LogLevel[logLevel] || LogLevel.INFO);
 streamDeck.logger.trace(`Log level is: ${logLevel}`);
 // Register actions
-streamDeck.actions.registerAction(new IncrementCounter());
+streamDeck.actions.registerAction(new CounterAction());
 streamDeck.actions.registerAction(new ResetCounters());
 // Connect to the Stream Deck
 streamDeck.connect();

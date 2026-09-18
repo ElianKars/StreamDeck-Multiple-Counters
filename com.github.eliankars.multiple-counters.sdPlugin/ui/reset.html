@@ -4,11 +4,33 @@
     <title>Reset Counters Settings</title>
     <meta charset="utf-8" />
     <script src="https://sdpi-components.dev/releases/v3/sdpi-components.js"></script>
+    <style>
+        [hidden] {
+            display: none !important;
+        }
+
+        .validation-message {
+            box-sizing: border-box;
+            margin: 0 12px 8px;
+            padding: 8px 10px;
+            border-left: 3px solid #f0ad4e;
+            background: rgba(240, 173, 78, 0.14);
+            color: #ffd98a;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .validation-message ul {
+            margin: 0;
+            padding-left: 18px;
+        }
+    </style>
 </head>
 <body>
-    <sdpi-item label="Normal-state title (⚠️Please use THIS title field, not the above!)">
-        <sdpi-textarea setting="idleTitle" default="default" rows="3"></sdpi-textarea>
+    <sdpi-item label="Reset button title">
+        <sdpi-textarea id="idleTitle" setting="idleTitle" rows="3"></sdpi-textarea>
     </sdpi-item>
+    <div id="idleTitleMessages" class="validation-message" role="alert" hidden></div>
     <sdpi-item label="Reset group ID">
         <sdpi-textfield setting="resetGroupId" default="default" placeholder="Enter the group ID to reset"></sdpi-textfield>
     </sdpi-item>
@@ -63,7 +85,7 @@
     </sdpi-item>
     
     <sdpi-item label="Confirm reset">
-        <sdpi-checkbox id="confirmReset" setting="confirmReset" checked="false" placeholder="Reset should be confirmed pressing twice"></sdpi-checkbox>
+        <sdpi-checkbox id="confirmReset" setting="confirmReset" label="Require a second press"></sdpi-checkbox>
     </sdpi-item>
     <sdpi-item label="Confirm title">
         <sdpi-textarea setting="confirmTitle" default="default" placeholder="Enter title shown during confirmation wait" rows="3"></sdpi-textarea>
@@ -120,5 +142,45 @@
             <option value="yellowCBackground">Yellow (c)</option>
         </sdpi-select>
     </sdpi-item>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const getElement = (id) => document.getElementById(id);
+            const fieldValue = (id) => String(getElement(id).value ?? '').trim();
+
+            const renderMessages = (id, messages) => {
+                const messageBox = getElement(id);
+                messageBox.replaceChildren();
+                messageBox.hidden = messages.length === 0;
+
+                if (messages.length === 0) return;
+
+                const list = document.createElement('ul');
+                messages.forEach((message) => {
+                    const item = document.createElement('li');
+                    item.textContent = message;
+                    list.appendChild(item);
+                });
+                messageBox.appendChild(list);
+            };
+
+            const updateValidation = (idleTitle = fieldValue('idleTitle')) => {
+                const idleTitleMessages = [];
+
+                if (String(idleTitle ?? '').trim() === '') {
+                    idleTitleMessages.push('Please use THIS title field, not the above!');
+                }
+
+                renderMessages('idleTitleMessages', idleTitleMessages);
+            };
+
+            getElement('idleTitle').addEventListener('valuechange', () => updateValidation());
+            updateValidation();
+
+            SDPIComponents.streamDeckClient.getSettings().then(({ settings }) => {
+                updateValidation(settings.idleTitle);
+            }).catch(() => updateValidation());
+        });
+    </script>
 </body>
 </html>

@@ -1,49 +1,65 @@
-import { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent} from "@elgato/streamdeck";
+import {
+  action,
+  DidReceiveSettingsEvent,
+  KeyDownEvent,
+  KeyUpEvent,
+  PropertyInspectorDidAppearEvent,
+  PropertyInspectorDidDisappearEvent,
+  SendToPluginEvent,
+  SingletonAction,
+  WillAppearEvent,
+  WillDisappearEvent,
+} from "@elgato/streamdeck";
 import { streamDeck } from "@elgato/streamdeck";
+import { writeFile } from "node:fs/promises";
 
 // Shared state to keep track of all counters.
-const incrementActionIds: Set<string> = new Set<string>();
+const counterActionIds = new Set<string>();
 const backgroundColorPath = "imgs/actions/background/";
-const confirmedByContext = new Map<string, NodeJS.Timeout>();   // For reset action confirmation
-// Tracks the current press state for each action instance (key). 
-// For every pressed key we store:
-// - the optional timer for key reset
-// - the optional timer for group reset
-// - whether the key-reset threshold has already fired
-// - whether the group-reset threshold has already fired
-// This allows both long-press actions to occur during the same press, 
-// while still preventing the normal short-press increment on key release.
+const maxTimerDuration = 2_147_483_647;
+const confirmedByContext = new Map<string, NodeJS.Timeout>();
 const pressStates = new Map<string, PressState>();
+const counterFileWrites = new Map<string, Promise<void>>();
+const counterFileWriteErrors = new Map<string, string>();
+const activeFileOutputConfigurations = new Map<string, FileOutputConfiguration>();
+const fileOutputDrafts = new Map<string, FileOutputConfiguration>();
+const openPropertyInspectors = new Set<string>();
 
-// Represents the runtime state of a single key press for one action instance.
-// A press can trigger up to two long-press actions:
-// - reset only this key
-// - reset the whole reset group
+// Runtime state for one physical press. Reset timers remain independent, while
+// the short-press and hold changes are selected exclusively on keyUp.
 type PressState = {
+  pressedAt: number;
+  holdChangeMs?: number;
+  holdChangeBy?: number;
+  keyResetMs?: number;
+  groupResetMs?: number;
+  resetGroupId: string;
   keyTimer?: NodeJS.Timeout;
   groupTimer?: NodeJS.Timeout;
+  keyResetPromise?: Promise<void>;
+  groupResetPromise?: Promise<void>;
   keyTriggered: boolean;
   groupTriggered: boolean;
 };
 
-/**
- * Sets the title of the action button.
- * @param action - The action instance.
- * @param prefixTitle - Optional prefix for the title.
- * @param count - The current count value.
- * @returns A promise that resolves when the title is set.
- */
+type FileOutputConfiguration = {
+  enabled: boolean;
+  path: string;
+};
+
+type FileOutputDraftMessage = {
+  event: "fileOutputDraftChanged";
+  writeToFileEnabled: boolean;
+  filePath: string;
+};
+
+/** Sets the title of an action button. */
 function setActionTitle(action: any, prefixTitle: string | undefined, count: number): Promise<void> {
   const title = prefixTitle ? `${prefixTitle}\n${count}` : `${count}`;
   return action.setTitle(title);
 }
 
-/**
- * Sets the image of the action button.
- * @param action - The action instance.
- * @param backgroundColor - The background color for the action.
- * @returns A promise that resolves when the image is set.
- */
+/** Sets the image of an action button. */
 function setActionImage(action: any, backgroundColor: string | undefined): Promise<void> {
   if (backgroundColor) {
     return action.setImage(`${backgroundColorPath}${backgroundColor}`);
@@ -51,265 +67,548 @@ function setActionImage(action: any, backgroundColor: string | undefined): Promi
   return Promise.resolve();
 }
 
-/**
- * Checks if a value is a valid positive integer.
- * @param v - The value to check.
- * @returns The value if it is a valid positive integer, otherwise undefined.
- */
-function toPositiveInt(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isInteger(v) && v > 0) return v;
-  if (typeof v === "string" && /^\d+$/.test(v.trim())) return Number(v.trim());
-  return undefined;                 // anything else → not a valid hold time
+/** Parses a positive integer used as a hold duration. */
+function toPositiveInt(value: unknown): number | undefined {
+  const parsed = toOptionalInt(value);
+  return parsed !== undefined && parsed > 0 && parsed <= maxTimerDuration
+    ? parsed
+    : undefined;
 }
 
-/**
- * Converts a value to an integer, returning a fallback value if the conversion fails.
- * @param value - The value to convert.
- * @param fallback - The fallback value to return if the conversion fails.
- * @returns The converted integer or the fallback value.
- */
+/** Parses an integer without treating an empty string as zero. */
+function toOptionalInt(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) ? value : undefined;
+  }
+
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+/** Converts a value to an integer, returning a fallback if parsing fails. */
 function toInt(value: unknown, fallback = 0): number {
-  const n = Number(value);
-  return Number.isInteger(n) ? n : fallback;
+  return toOptionalInt(value) ?? fallback;
+}
+
+/** Reads the new short-press setting, with the pre-update key as fallback. */
+function getShortPressChangeBy(settings: CounterSettings): number {
+  const configuredValue =
+    settings.shortPressChangeBy !== undefined
+      ? settings.shortPressChangeBy
+      : settings.incdecrementBy;
+  return toInt(configuredValue, 1);
 }
 
 /**
- * Logs the action details.
- * @param event - The event instance.
- * @param settings - The settings of the action.
- * @param actionType - The type of action being logged.
+ * Existing profiles used Display-only to suppress normal key presses. Treat
+ * that legacy setting as the inverse of the new short-press switch until the
+ * Property Inspector has persisted the replacement setting.
  */
+function isShortPressChangeEnabled(settings: CounterSettings): boolean {
+  if (typeof settings.shortPressChangeEnabled === "boolean") {
+    return settings.shortPressChangeEnabled;
+  }
+
+  return settings.displayOnly !== true;
+}
+
+/** Reads hold-change settings, including the names used by a pre-release build. */
+function isHoldChangeEnabled(settings: CounterSettings): boolean {
+  if (typeof settings.holdChangeEnabled === "boolean") {
+    return settings.holdChangeEnabled;
+  }
+
+  return settings.holdToDecrementEnabled === true;
+}
+
+function getHoldChangeBy(settings: CounterSettings): unknown {
+  return settings.holdChangeBy !== undefined
+    ? settings.holdChangeBy
+    : settings.holdToDecrementBy;
+}
+
+function getHoldChangeDuration(settings: CounterSettings): unknown {
+  return settings.holdChangeDuration !== undefined
+    ? settings.holdChangeDuration
+    : settings.holdToDecrementDuration;
+}
+
+/**
+ * Old profiles only stored a reset duration. If the new enabled setting is
+ * absent, a valid legacy duration still enables that reset.
+ */
+function isResetEnabled(enabled: boolean | undefined, duration: unknown): boolean {
+  return typeof enabled === "boolean" ? enabled : toPositiveInt(duration) !== undefined;
+}
+
+/** Writes one counter value, serializing writes per action to preserve order. */
+async function writeCounterValue(
+  actionId: string,
+  configuration: FileOutputConfiguration,
+  count: number,
+): Promise<void> {
+  if (!configuration.enabled) return;
+
+  const outputPath = configuration.path;
+  if (outputPath === "") return;
+
+  const previousWrite = counterFileWrites.get(actionId) ?? Promise.resolve();
+  const currentWrite = previousWrite.then(async () => {
+    try {
+      await writeFile(outputPath, String(count), "utf8");
+      counterFileWriteErrors.delete(actionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const errorKey = `${outputPath}\0${message}`;
+
+      // Keep a persistent path problem visible without repeating the same
+      // error after every counter update. A successful write clears it.
+      if (counterFileWriteErrors.get(actionId) !== errorKey) {
+        counterFileWriteErrors.set(actionId, errorKey);
+        streamDeck.logger.error(
+          `Unable to write counter value for action=${actionId} to ${JSON.stringify(outputPath)}: ${message}`,
+        );
+      }
+    }
+  });
+
+  counterFileWrites.set(actionId, currentWrite);
+  await currentWrite;
+
+  if (counterFileWrites.get(actionId) === currentWrite) {
+    counterFileWrites.delete(actionId);
+  }
+}
+
+function getFileOutputConfiguration(settings: CounterSettings): FileOutputConfiguration {
+  const outputPath = typeof settings.filePath === "string" ? settings.filePath.trim() : "";
+  return {
+    enabled: settings.writeToFileEnabled === true,
+    path: outputPath,
+  };
+}
+
+function getFileOutputDraftConfiguration(settings: CounterSettings): FileOutputConfiguration {
+  const draftPath =
+    typeof settings.filePathDraft === "string"
+      ? settings.filePathDraft.trim()
+      : getFileOutputConfiguration(settings).path;
+  return {
+    enabled: settings.writeToFileEnabled === true,
+    path: draftPath,
+  };
+}
+
+function hasSameFileOutputConfiguration(
+  first: FileOutputConfiguration | undefined,
+  second: FileOutputConfiguration,
+): boolean {
+  return first?.enabled === second.enabled && first.path === second.path;
+}
+
+/**
+ * Activates file-output settings and writes once when that configuration
+ * changed. While the Property Inspector is open, its draft is deliberately not
+ * activated so partial paths can never receive counter output.
+ */
+async function activateFileOutputConfiguration(
+  action: any,
+  configuration: FileOutputConfiguration,
+  count: number,
+): Promise<void> {
+  const actionId = action.id;
+  const previousConfiguration = activeFileOutputConfigurations.get(actionId);
+  if (hasSameFileOutputConfiguration(previousConfiguration, configuration)) return;
+
+  activeFileOutputConfigurations.set(actionId, configuration);
+  counterFileWriteErrors.delete(actionId);
+  await writeCounterValue(actionId, configuration, count);
+}
+
+/** Persists and displays one counter value, including optional file output. */
+async function setCounterValue(
+  action: any,
+  settings: CounterSettings,
+  count: number,
+  updateImage = false,
+): Promise<void> {
+  settings.count = count;
+  await action.setSettings(settings);
+  if (updateImage) await setActionImage(action, settings.backgroundColor);
+  await setActionTitle(action, settings.prefixTitle, count);
+
+  const configuration =
+    activeFileOutputConfigurations.get(action.id) ?? getFileOutputConfiguration(settings);
+  activeFileOutputConfigurations.set(action.id, configuration);
+  void writeCounterValue(action.id, configuration, count);
+}
+
+/** Applies a delta to one counter and every counter in its sync group. */
+async function changeCounterAndSync(
+  action: any,
+  settings: CounterSettings,
+  step: number,
+): Promise<void> {
+  const syncGroup = (settings.syncGroupId ?? "").trim();
+  const current = toInt(settings.count, toInt(settings.initialValue, 0));
+
+  await setCounterValue(action, settings, current + step, true);
+
+  const syncPromises = Array.from(counterActionIds).map(async (id) => {
+    if (id === action.id) return;
+
+    const otherAction = streamDeck.actions.getActionById(id);
+    if (!otherAction || !otherAction.isKey()) {
+      counterActionIds.delete(id);
+      pressStates.delete(id);
+      return;
+    }
+
+    const otherSettings = await otherAction.getSettings<CounterSettings>();
+    if (syncGroup !== "" && (otherSettings.syncGroupId ?? "").trim() === syncGroup) {
+      const otherCurrent = toInt(
+        otherSettings.count,
+        toInt(otherSettings.initialValue, 0),
+      );
+      await setCounterValue(otherAction, otherSettings, otherCurrent + step);
+    }
+  });
+
+  await Promise.all(syncPromises);
+}
+
+/** Clears timers that have not fired yet for a press. */
+function clearPressTimers(state: PressState | undefined): void {
+  if (state?.keyTimer) clearTimeout(state.keyTimer);
+  if (state?.groupTimer) clearTimeout(state.groupTimer);
+  if (state) {
+    state.keyTimer = undefined;
+    state.groupTimer = undefined;
+  }
+}
+
+/** Runs the per-key reset once for a press. */
+function triggerKeyReset(ctx: string, state: PressState, action: any): Promise<void> {
+  if (state.keyTriggered) return state.keyResetPromise ?? Promise.resolve();
+
+  state.keyTriggered = true;
+  state.keyResetPromise = (async () => {
+    try {
+      const settings = (await action.getSettings()) as CounterSettings;
+      const resetValue = toInt(settings.initialValue, 0);
+      await setCounterValue(action, settings, resetValue);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      streamDeck.logger.error(`Unable to reset counter action=${ctx}: ${message}`);
+    }
+  })();
+
+  return state.keyResetPromise;
+}
+
+/** Runs the reset-group action once for a press. */
+function triggerGroupReset(ctx: string, state: PressState): Promise<void> {
+  if (state.groupTriggered) return state.groupResetPromise ?? Promise.resolve();
+
+  state.groupTriggered = true;
+  state.groupResetPromise = (async () => {
+    try {
+      await resetGroupById(state.resetGroupId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      streamDeck.logger.error(
+        `Unable to reset group ${JSON.stringify(state.resetGroupId)} from action=${ctx}: ${message}`,
+      );
+    }
+  })();
+
+  return state.groupResetPromise;
+}
+
+/** Logs action details at trace level. */
 function logActionDetails(event: any, settings: any, actionType: string): void {
   const payload = event.payload ?? {};
-
-  // Is in multi-action?
   const inMultiAction = payload.isInMultiAction === true;
-  // Coordinates only available in top-level actions
   const coords = payload.coordinates as { column: number; row: number } | undefined;
+  const pos = coords ? `[${coords.column},${coords.row}]` : inMultiAction ? "[MA]" : "[–]";
 
-  // Position tag: "[col,row]" for normal keys, "[MA]" for Multi-Action children, "[–]" when no position data
-  const pos = coords
-    ? `[${coords.column},${coords.row}]`     // bv. [2,0]
-    : inMultiAction
-      ? "[MA]"                               // Multi Action-child
-      : "[–]";                               // Inspector-/global event
-
-  // Log other metadata
-  const { prefixTitle, count, resetGroupId, syncGroupId, displayOnly, incdecrementBy, longPressKeyReset, longPressGroupReset} = settings ?? {};
-
+  const {
+    prefixTitle,
+    count,
+    resetGroupId,
+    syncGroupId,
+    shortPressChangeBy,
+    longPressKeyResetEnabled,
+    longPressKeyReset,
+    longPressGroupResetEnabled,
+    longPressGroupReset,
+    writeToFileEnabled,
+  } = settings ?? {};
+  const configuredShortPressChangeBy =
+    shortPressChangeBy ?? settings?.incdecrementBy ?? 1;
+  const shortPressChangeEnabled = isShortPressChangeEnabled(settings ?? {});
+  const holdChangeEnabled = isHoldChangeEnabled(settings ?? {});
+  const holdChangeBy = getHoldChangeBy(settings ?? {});
+  const holdChangeDuration = getHoldChangeDuration(settings ?? {});
   const uuid = event.actionUUID ?? event.context ?? "unknown";
 
   streamDeck.logger.trace(
     `Action: ${actionType}, UUID: ${uuid}, Pos: ${pos}, ` +
-    `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
-    `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}, ` +
-    `DispOnly: ${displayOnly === true ? 1 : 0}, Step: ${incdecrementBy ?? 1}, ` +
-    `LPkey: ${longPressKeyReset}, ` +
-    `LPgrp: ${longPressGroupReset}`
-   );
+      `Prefix: ${prefixTitle ?? ""}, Count: ${count ?? ""}, ` +
+      `ResetGrp: ${resetGroupId ?? ""}, SyncGrp: ${syncGroupId ?? ""}, ` +
+      `ShortChange: ${shortPressChangeEnabled ? 1 : 0}/${configuredShortPressChangeBy}, ` +
+      `HoldChange: ${holdChangeEnabled === true ? 1 : 0}/${holdChangeBy ?? ""}/${holdChangeDuration ?? ""}, ` +
+      `LPkey: ${longPressKeyResetEnabled ?? "legacy"}/${longPressKeyReset ?? ""}, ` +
+      `LPgrp: ${longPressGroupResetEnabled ?? "legacy"}/${longPressGroupReset ?? ""}, ` +
+      `File: ${writeToFileEnabled === true ? 1 : 0}`,
+  );
 }
 
-/**
- * Increment Counter Action
- * Each counter has a unique UUID and uses separate settings.
- */
+/** Counter Action. Each counter has separate persisted settings. */
 @action({ UUID: "com.github.eliankars.multiple-counters.counter" })
-export class IncrementCounter extends SingletonAction<incrementSettings> {
-  /**
-   * Called when the action appears on the Stream Deck.
-   */
-  override async onWillAppear(ev: WillAppearEvent<incrementSettings>) {
-    const settings = (ev.payload.settings ?? {}) as incrementSettings;
-    const uniqueActionId = ev.action.id ?? settings.uniqueActionId;
+export class CounterAction extends SingletonAction<CounterSettings> {
+  override async onWillAppear(ev: WillAppearEvent<CounterSettings>): Promise<void> {
+    const settings = (ev.payload.settings ?? {}) as CounterSettings;
     const initialValue = toInt(settings.initialValue, 0);
-    const count = settings.count ?? initialValue;          // Initialize count with initialValue: if provided, otherwise default to 0
-    settings.count = count;
-    
-    incrementActionIds.add(uniqueActionId);
-       
-    logActionDetails(ev, settings, "IncrementCounter.onWillAppear");
+    const count = toInt(settings.count, initialValue);
 
-    // Update the title and image of the button
-    setActionImage(ev.action, settings.backgroundColor);
-    await setActionTitle(ev.action, settings.prefixTitle ?? "", count);
+    counterActionIds.add(ev.action.id);
+    activeFileOutputConfigurations.set(
+      ev.action.id,
+      getFileOutputConfiguration(settings),
+    );
+    logActionDetails(ev, settings, "CounterAction.onWillAppear");
 
-    await ev.action.setSettings(settings);
+    await setActionImage(ev.action, settings.backgroundColor);
+    await setCounterValue(ev.action, settings, count);
   }
 
-  /**
-   * Called when the action disappears from the Stream Deck.
-   */
-  override async onWillDisappear(ev: WillDisappearEvent<incrementSettings>): Promise<void> {
+  override async onWillDisappear(
+    ev: WillDisappearEvent<CounterSettings>,
+  ): Promise<void> {
     const id = ev.action.id;
     if (!id) return;
 
-    incrementActionIds.delete(id);
-
-    // Opruimen van eventuele lopende press-state
+    counterActionIds.delete(id);
+    activeFileOutputConfigurations.delete(id);
+    fileOutputDrafts.delete(id);
+    openPropertyInspectors.delete(id);
+    counterFileWriteErrors.delete(id);
     const state = pressStates.get(id);
-    if (state?.keyTimer) clearTimeout(state.keyTimer);
-    if (state?.groupTimer) clearTimeout(state.groupTimer);
-    if (state) streamDeck.logger.trace(`Cleaning press state on disappear for action=${id}`);
+    clearPressTimers(state);
+    if (state) {
+      streamDeck.logger.trace(`Cleaning press state on disappear for action=${id}`);
+    }
     pressStates.delete(id);
 
-    logActionDetails(ev, ev.payload.settings ?? {}, "IncrementCounter.onWillDisappear");
+    logActionDetails(ev, ev.payload.settings ?? {}, "CounterAction.onWillDisappear");
   }
 
- /**
- * Called when the action's key is pressed.
- * Starts up to two independent long-press timers for this key:
- * - one for resetting only this counter
- * - one for resetting all counters in the same resetGroupId
- *
- * Both timers are allowed to fire during the same press.
- * Example:
- * - after 2000 ms → reset only this key
- * - after 3000 ms → reset the whole group
- *
- * If the key is released before either threshold is reached,
- * onKeyUp() will treat it as a normal short press and increment the counter.
- */
-override async onKeyDown(ev: KeyDownEvent<incrementSettings>): Promise<void> {
-  const ctx = ev.action.id!;
-  const settings = (ev.payload.settings ?? {}) as incrementSettings;
+  /** Starts the two independent reset timers and records the press timestamp. */
+  override async onKeyDown(ev: KeyDownEvent<CounterSettings>): Promise<void> {
+    const ctx = ev.action.id;
+    const settings = (ev.payload.settings ?? {}) as CounterSettings;
 
-  // Clean up any old press state for this key before starting a new press cycle.
-  const old = pressStates.get(ctx);
-  if (old?.keyTimer) clearTimeout(old.keyTimer);
-  if (old?.groupTimer) clearTimeout(old.groupTimer);
+    clearPressTimers(pressStates.get(ctx));
 
-  const state: PressState = {
-    keyTriggered: false,
-    groupTriggered: false,
-  };
+    const resetGroupId = (settings.resetGroupId ?? "").trim();
+    const keyResetMs = isResetEnabled(
+      settings.longPressKeyResetEnabled,
+      settings.longPressKeyReset,
+    )
+      ? toPositiveInt(settings.longPressKeyReset)
+      : undefined;
+    const groupResetMs =
+      isResetEnabled(settings.longPressGroupResetEnabled, settings.longPressGroupReset) &&
+      resetGroupId !== ""
+        ? toPositiveInt(settings.longPressGroupReset)
+        : undefined;
+    const holdChangeEnabled = isHoldChangeEnabled(settings);
+    const holdChangeMs = holdChangeEnabled
+      ? toPositiveInt(getHoldChangeDuration(settings))
+      : undefined;
 
-  // 1) Key-reset timer.
-  // Fires once the longPressKeyReset threshold is reached and resets only this counter.
-  const keyMs = toPositiveInt(settings.longPressKeyReset);
-  if (keyMs) {
-    state.keyTimer = setTimeout(async () => {
-      // Mark that the key-reset threshold has fired during this press.
-      state.keyTriggered = true;
-      pressStates.set(ctx, state);
-      
-      const cur = await ev.action.getSettings<incrementSettings>();
-      const resetValue = toInt(cur.initialValue, 0);
+    const state: PressState = {
+      pressedAt: Date.now(),
+      holdChangeMs,
+      holdChangeBy: holdChangeEnabled
+        ? toOptionalInt(getHoldChangeBy(settings))
+        : undefined,
+      keyResetMs,
+      groupResetMs,
+      resetGroupId,
+      keyTriggered: false,
+      groupTriggered: false,
+    };
 
-      cur.count = resetValue;
-      await ev.action.setSettings(cur);
-      await setActionTitle(ev.action, cur.prefixTitle, resetValue);
-    }, keyMs);
+    if (keyResetMs !== undefined) {
+      state.keyTimer = setTimeout(() => {
+        state.keyTimer = undefined;
+        void triggerKeyReset(ctx, state, ev.action);
+      }, keyResetMs);
+    }
+
+    if (groupResetMs !== undefined) {
+      state.groupTimer = setTimeout(() => {
+        state.groupTimer = undefined;
+        void triggerGroupReset(ctx, state);
+      }, groupResetMs);
+    }
+
+    pressStates.set(ctx, state);
+    logActionDetails(ev, settings, "CounterAction.onKeyDown");
   }
 
-  // 2) Group-reset timer.
-  // Fires once the longPressGroupReset threshold is reached and resets all counters
-  // that belong to the same resetGroupId.
-  const groupMs = toPositiveInt(settings.longPressGroupReset);
-  const resetGroupId = (settings.resetGroupId ?? "").trim();
+  /** Selects resets first, then exactly one count action, based on total duration. */
+  override async onKeyUp(ev: KeyUpEvent<CounterSettings>): Promise<void> {
+    const ctx = ev.action.id;
+    const state = pressStates.get(ctx);
+    clearPressTimers(state);
+    const pressDuration = state ? Math.max(0, Date.now() - state.pressedAt) : 0;
 
-  if (groupMs && resetGroupId !== "") {
-    state.groupTimer = setTimeout(async () => {
-      // Mark that the group-reset threshold has fired during this press.
-      state.groupTriggered = true;
-      pressStates.set(ctx, state);
+    try {
+      if (state) {
+        // Catch up reset callbacks that were due but had not run yet because of
+        // event-loop scheduling. Each trigger function is idempotent per press.
+        if (state.keyResetMs !== undefined && pressDuration >= state.keyResetMs) {
+          await triggerKeyReset(ctx, state, ev.action);
+        } else if (state.keyResetPromise) {
+          await state.keyResetPromise;
+        }
 
-      await resetGroupById(resetGroupId);
-    }, groupMs);
-  }
+        if (state.groupResetMs !== undefined && pressDuration >= state.groupResetMs) {
+          await triggerGroupReset(ctx, state);
+        } else if (state.groupResetPromise) {
+          await state.groupResetPromise;
+        }
 
-  // Store the active press state for this key so onKeyUp() can inspect it later.
-  pressStates.set(ctx, state);
-
-  logActionDetails(ev, settings, "IncrementCounter.onKeyDown");
-}
-
-/**
- * Called when the action's key is released.
- */
-override async onKeyUp(ev: KeyUpEvent<incrementSettings>): Promise<void> {
-  const ctx = ev.action.id!;
-  const state = pressStates.get(ctx);
-
-  // 1) Stop any timers that are still pending for this press.
-  // If a threshold has not been reached yet, releasing the key should prevent it from firing later.
-  if (state?.keyTimer) clearTimeout(state.keyTimer);
-  if (state?.groupTimer) clearTimeout(state.groupTimer);
-
-  // 2) If one or both long-press actions already fired while the key was still down,
-  // this press must NOT perform the normal short-press increment on release.
-  if (state?.keyTriggered || state?.groupTriggered) {
-    streamDeck.logger.trace(`Short press skipped after long press: ctx=${ctx}, keyTriggered=${state?.keyTriggered ? 1 : 0}, groupTriggered=${state?.groupTriggered ? 1 : 0}`);
-    pressStates.delete(ctx);
-    return;
-  }
-
-  // 3) No long-press threshold fired → this was a normal short press.
-  // Remove the stored press state and perform the usual increment action.
-  pressStates.delete(ctx);
-
-  // Always read the latest settings here.
-  // The count may have changed while the key was held down
-  // (for example due to a reset or sync update from another action).
-  const settings = await ev.action.getSettings<incrementSettings>();
-  const syncGroup = (settings.syncGroupId ?? "").trim();
-
-  // Only increment if not display-only, display-only counters can still be updated 
-  // by other counters but won't increment themselves on key press
-  if (!settings.displayOnly) {
-    const step = toInt(settings.incdecrementBy, 1);
-    const current = toInt(settings.count, toInt(settings.initialValue, 0));
-
-    settings.incdecrementBy = step;
-    settings.count = current + step;
-
-    await setActionImage(ev.action, settings.backgroundColor);
-    await ev.action.setSettings(settings);
-    await setActionTitle(ev.action, settings.prefixTitle, settings.count);
-
-    const syncPromises = Array.from(incrementActionIds).map(async id => {
-      if (id === ev.action.id) return;
-
-      const a = streamDeck.actions.getActionById(id);
-      if (!a) {
-        incrementActionIds.delete(id);
-        pressStates.delete(id);
-        return;
+        if (state.keyTriggered || state.groupTriggered) {
+          streamDeck.logger.trace(
+            `Count change skipped after reset: ctx=${ctx}, duration=${pressDuration}, ` +
+              `keyTriggered=${state.keyTriggered ? 1 : 0}, groupTriggered=${state.groupTriggered ? 1 : 0}`,
+          );
+          return;
+        }
       }
 
-      const s = await a.getSettings<incrementSettings>();
+      // Read the latest value in case this counter changed while the key was held.
+      const settings = await ev.action.getSettings<CounterSettings>();
+      const useHoldChange =
+        state?.holdChangeMs !== undefined && pressDuration >= state.holdChangeMs;
 
-      if ((s.syncGroupId ?? "").trim() === syncGroup && syncGroup !== "") {
-        const otherCurrent = toInt(s.count, toInt(s.initialValue, 0));
-        s.count = otherCurrent + step;
-        await a.setSettings(s);
-        await setActionTitle(a, s.prefixTitle, s.count);
+      if (useHoldChange && state.holdChangeBy === undefined) {
+        streamDeck.logger.warn(
+          `Hold change skipped because Change by is not a valid integer: action=${ctx}`,
+        );
+      } else if (useHoldChange) {
+        await changeCounterAndSync(ev.action, settings, state.holdChangeBy!);
+      } else if (isShortPressChangeEnabled(settings)) {
+        await changeCounterAndSync(ev.action, settings, getShortPressChangeBy(settings));
       }
-    });
 
-    await Promise.all(syncPromises);
+      logActionDetails(ev, settings, "CounterAction.onKeyUp");
+    } finally {
+      // Do not delete a newer press if another keyDown arrived while async work
+      // for this release was still completing.
+      if (!state || pressStates.get(ctx) === state) {
+        pressStates.delete(ctx);
+      }
+    }
   }
 
-  logActionDetails(ev, settings, "IncrementCounter.onKeyUp");
-}
-  
-  /**
-   * Called when the action receives new settings.
-   */
-  override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<incrementSettings>): Promise<void> {
+  override async onDidReceiveSettings(
+    ev: DidReceiveSettingsEvent<CounterSettings>,
+  ): Promise<void> {
     const settings = ev.payload.settings ?? {};
     const count = toInt(settings.count, toInt(settings.initialValue, 0));
     await setActionImage(ev.action, settings.backgroundColor);
     await setActionTitle(ev.action, settings.prefixTitle, count);
-    logActionDetails(ev, settings, "IncrementCounter.onDidReceiveSettings");
+
+    // sdpi-components persists text fields while the user types. Keep those
+    // settings as a draft until the Property Inspector closes, so neither a
+    // pause nor a counter press can activate an incomplete path.
+    if (!openPropertyInspectors.has(ev.action.id)) {
+      await activateFileOutputConfiguration(
+        ev.action,
+        getFileOutputConfiguration(settings),
+        count,
+      );
+    }
+
+    logActionDetails(ev, settings, "CounterAction.onDidReceiveSettings");
   }
 
+  override async onPropertyInspectorDidAppear(
+    ev: PropertyInspectorDidAppearEvent<CounterSettings>,
+  ): Promise<void> {
+    openPropertyInspectors.add(ev.action.id);
+    fileOutputDrafts.delete(ev.action.id);
+
+    if (!activeFileOutputConfigurations.has(ev.action.id)) {
+      const settings = await ev.action.getSettings<CounterSettings>();
+      activeFileOutputConfigurations.set(
+        ev.action.id,
+        getFileOutputConfiguration(settings),
+      );
+    }
+  }
+
+  override onSendToPlugin(
+    ev: SendToPluginEvent<FileOutputDraftMessage, CounterSettings>,
+  ): void {
+    if (
+      ev.payload?.event !== "fileOutputDraftChanged" ||
+      typeof ev.payload.writeToFileEnabled !== "boolean" ||
+      typeof ev.payload.filePath !== "string"
+    ) {
+      return;
+    }
+
+    fileOutputDrafts.set(ev.action.id, {
+      enabled: ev.payload.writeToFileEnabled,
+      path: ev.payload.filePath.trim(),
+    });
+  }
+
+  override async onPropertyInspectorDidDisappear(
+    ev: PropertyInspectorDidDisappearEvent<CounterSettings>,
+  ): Promise<void> {
+    const actionId = ev.action.id;
+
+    try {
+      if (!counterActionIds.has(actionId)) return;
+
+      const settings = await ev.action.getSettings<CounterSettings>();
+      const configuration =
+        fileOutputDrafts.get(actionId) ?? getFileOutputDraftConfiguration(settings);
+
+      // The explicit draft message is sent immediately for each field change,
+      // while the component's automatic settings update may still be queued as
+      // the inspector closes. Persist the final draft before activating it.
+      settings.writeToFileEnabled = configuration.enabled;
+      settings.filePath = configuration.path;
+      await ev.action.setSettings(settings);
+
+      const count = toInt(settings.count, toInt(settings.initialValue, 0));
+      await activateFileOutputConfiguration(ev.action, configuration, count);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      streamDeck.logger.error(
+        `Unable to apply counter file output after closing the Property Inspector for action=${actionId}: ${message}`,
+      );
+    } finally {
+      fileOutputDrafts.delete(actionId);
+      openPropertyInspectors.delete(actionId);
+    }
+  }
 }
 
 @action({ UUID: "com.github.eliankars.multiple-counters.reset" })
 export class ResetCounters extends SingletonAction<resetSettings> {
-  /**
-   * Called when the action appears on the Stream Deck.
-   */
   override onWillAppear(ev: WillAppearEvent<resetSettings>): void | Promise<void> {
     const settings = ev.payload.settings ?? {};
     const idleTitle = settings.idleTitle ?? "";
@@ -318,58 +617,53 @@ export class ResetCounters extends SingletonAction<resetSettings> {
     logActionDetails(ev, settings, "ResetCounters.onWillAppear");
   }
 
-  /**
-   * Called when the action disappears from the Stream Deck.
-   */
   override async onWillDisappear(ev: WillDisappearEvent<resetSettings>): Promise<void> {
     const ctx = ev.action.id;
     if (!ctx) return;
 
-  const existing = confirmedByContext.get(ctx);
-  if (existing) {
-    streamDeck.logger.trace(`Cleaning confirm timeout on disappear for ctx=${ctx}`);
-    clearTimeout(existing);
-    confirmedByContext.delete(ctx);
+    const existing = confirmedByContext.get(ctx);
+    if (existing) {
+      streamDeck.logger.trace(`Cleaning confirm timeout on disappear for ctx=${ctx}`);
+      clearTimeout(existing);
+      confirmedByContext.delete(ctx);
+    }
   }
-}
 
-  /**
-   * Called when the action's key is pressed.
-   */
   override async onKeyDown(ev: KeyDownEvent<resetSettings>): Promise<void> {
     const settings = ev.payload.settings ?? {};
-    const ctx = ev.action.id!;
+    const ctx = ev.action.id;
     const confirmReset = settings.confirmReset ?? false;
     const confirmResetWaitTime = toPositiveInt(settings.confirmTimeout) ?? 5000;
 
-    // Check if the the user wants to confirm the reset first else perform the reset action immediately
     if (confirmReset) {
       const existing = confirmedByContext.get(ctx);
 
       if (!existing) {
-        // First press: ask for confirmation
         await ev.action.setTitle(settings.confirmTitle);
         await setActionImage(ev.action, settings.confirmBackgroundColor);
-        
+
         const timeout = setTimeout(() => {
           confirmedByContext.delete(ctx);
           ev.action.setTitle(settings.idleTitle);
           setActionImage(ev.action, settings.backgroundColor);
         }, confirmResetWaitTime);
-        
+
         confirmedByContext.set(ctx, timeout);
-        streamDeck.logger.trace(`Reset confirm started: ctx=${ctx}, group=${settings.resetGroupId ?? ""}, timeout=${confirmResetWaitTime}`);
+        streamDeck.logger.trace(
+          `Reset confirm started: ctx=${ctx}, group=${settings.resetGroupId ?? ""}, timeout=${confirmResetWaitTime}`,
+        );
         return;
-      } else {
-          clearTimeout(existing);
-          confirmedByContext.delete(ctx);
-          await ev.action.setTitle(settings.idleTitle);
-          await setActionImage(ev.action, settings.backgroundColor);
-          streamDeck.logger.trace(`Reset confirm expired: ctx=${ctx}, group=${settings.resetGroupId ?? ""}`);
       }
+
+      clearTimeout(existing);
+      confirmedByContext.delete(ctx);
+      await ev.action.setTitle(settings.idleTitle);
+      await setActionImage(ev.action, settings.backgroundColor);
+      streamDeck.logger.trace(
+        `Reset confirmed: ctx=${ctx}, group=${settings.resetGroupId ?? ""}`,
+      );
     }
 
-    // Perform the reset, reset all counters with the same resetGroupId to 0
     const resetGroupId = (settings.resetGroupId ?? "").trim();
     if (resetGroupId !== "") {
       await resetGroupById(resetGroupId);
@@ -378,10 +672,9 @@ export class ResetCounters extends SingletonAction<resetSettings> {
     logActionDetails(ev, settings, "ResetCounters.onKeyDown");
   }
 
-  /**
-   * Called when the action receives new settings.
-   */
-  override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<resetSettings>): Promise<void> {
+  override async onDidReceiveSettings(
+    ev: DidReceiveSettingsEvent<resetSettings>,
+  ): Promise<void> {
     const settings = ev.payload.settings ?? {};
     const idleTitle = settings.idleTitle ?? "";
 
@@ -391,58 +684,63 @@ export class ResetCounters extends SingletonAction<resetSettings> {
   }
 }
 
-/**
- * Resets all counters with the specified group ID to zero.
- */
+/** Resets all counters with the specified group ID to their own initial value. */
 async function resetGroupById(groupId: string): Promise<void> {
-  const resetPromises = Array.from(incrementActionIds).map(async (otherId) => {
-    const a = streamDeck.actions.getActionById(otherId);
+  const resetPromises = Array.from(counterActionIds).map(async (otherId) => {
+    const action = streamDeck.actions.getActionById(otherId);
 
-    // If the action no longer exists, clean up its ID from our shared state and skip it.
-    if (!a) {
-      incrementActionIds.delete(otherId);
+    if (!action || !action.isKey()) {
+      counterActionIds.delete(otherId);
       pressStates.delete(otherId);
       return;
     }
 
-    const os = await a.getSettings<incrementSettings>();
-    if ((os.resetGroupId ?? "").trim() === groupId) {
-      const resetValue = toInt(os.initialValue, 0);
-      os.count = resetValue;
-      await a.setSettings(os);
-      await setActionTitle(a, os.prefixTitle, resetValue);
+    const settings = await action.getSettings<CounterSettings>();
+    if ((settings.resetGroupId ?? "").trim() === groupId) {
+      const resetValue = toInt(settings.initialValue, 0);
+      await setCounterValue(action, settings, resetValue);
     }
   });
 
   await Promise.all(resetPromises);
 }
 
-/**
- * Settings for the IncrementCounter action.
- */
-type incrementSettings = {
-  prefixTitle?: string;         // Optional prefix for the title
-  count?: number;               // Current count value
-  initialValue?: number;        // Initial value for the counter
-  incdecrementBy?: number;      // Value to increment/decrement by
-  uniqueActionId?: string;      // Unique identifier for the action
-  syncGroupId?: string;         // Counters with the same syncGroupId will be synchronized
-  resetGroupId?: string;        // Counters with the same resetGroupId can be reset together
-  displayOnly?: boolean;        // Whether the counter is display-only
-  backgroundColor?: string;     // Background color for the action
-  longPressKeyReset?: number;  // Time in milliseconds to reset the current key on long press
-  longPressGroupReset?: number; // Time in milliseconds to reset all counters in the same resetGroupId on long press
+/** Settings for the Counter action. */
+type CounterSettings = {
+  prefixTitle?: string;
+  count?: number | string;
+  initialValue?: number | string;
+  shortPressChangeEnabled?: boolean;
+  shortPressChangeBy?: number | string;
+  incdecrementBy?: number | string; // Legacy setting used before Short press — change by.
+  uniqueActionId?: string;
+  syncGroupId?: string;
+  resetGroupId?: string;
+  displayOnly?: boolean; // Legacy inverse of shortPressChangeEnabled.
+  backgroundColor?: string;
+  holdChangeEnabled?: boolean;
+  holdChangeBy?: number | string;
+  holdChangeDuration?: number | string;
+  // Compatibility with the setting names used by a pre-release build.
+  holdToDecrementEnabled?: boolean;
+  holdToDecrementBy?: number | string;
+  holdToDecrementDuration?: number | string;
+  longPressKeyResetEnabled?: boolean;
+  longPressKeyReset?: number | string;
+  longPressGroupResetEnabled?: boolean;
+  longPressGroupReset?: number | string;
+  writeToFileEnabled?: boolean;
+  filePath?: string;
+  filePathDraft?: string;
 };
 
-/**
- * Settings for the ResetCounters action.
- */
+/** Settings for the ResetCounters action. */
 type resetSettings = {
-  idleTitle?: string;               // Title when idle, normal title
-  resetGroupId?: string;            // Only counters with the same resetGroupId will be reset
-  backgroundColor?: string;         // Background color for the action
-  confirmReset?: boolean;           // Whether to confirm reset
-  confirmTitle: string;             // Title for confirmation
-  confirmTimeout?: number;          // Timeout for confirmation in seconds
-  confirmBackgroundColor?: string;  // Background color for confirmation
+  idleTitle?: string;
+  resetGroupId?: string;
+  backgroundColor?: string;
+  confirmReset?: boolean;
+  confirmTitle?: string;
+  confirmTimeout?: number | string;
+  confirmBackgroundColor?: string;
 };

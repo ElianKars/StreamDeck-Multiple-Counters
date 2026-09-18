@@ -1,5 +1,5 @@
 import streamDeck, { LogLevel } from "@elgato/streamdeck";
-import { IncrementCounter, ResetCounters } from "./actions/multiple-counters";
+import { CounterAction, ResetCounters } from "./actions/multiple-counters";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -30,7 +30,7 @@ streamDeck.logger.setLevel(LogLevel[logLevel] || LogLevel.INFO);
 streamDeck.logger.trace(`Log level is: ${logLevel}`);
 
 // Register actions
-streamDeck.actions.registerAction(new IncrementCounter());
+streamDeck.actions.registerAction(new CounterAction());
 streamDeck.actions.registerAction(new ResetCounters());
 
 // Connect to the Stream Deck
