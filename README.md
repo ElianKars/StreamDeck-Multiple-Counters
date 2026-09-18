@@ -137,7 +137,7 @@ Built with:
 **Changed**
 - **Counter Property Inspector**<br/>
   Optional behaviors now use checkboxes with conditional controls and validation warnings shown beside the relevant setting.
-- **Independently enable or disable the different functions per Counter key
+- **Independently enable or disable the different functions per Counter key**
 - **Display-only replaced**<br/>
   The `Display-only` option has been removed. The normal `Inc/decrement` action now has its own checkbox that can be disabled.
 
